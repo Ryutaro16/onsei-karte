@@ -171,10 +171,11 @@ function showChecks() {
 function showResult(sections, meta) {
   checkItems = (sections.確認 || "").split("\n").map((l) => l.replace(/^\s*[・\-]\s*/, "").trim()).filter((l) => l && l !== "なし");
   for (const k of KEYS) {
-    // 古い形(本文に【要確認】)が来たときも、本文からは外して確認欄に回す
+    // 古い形(本文に【要確認】)が来たときも、本文からは外して確認欄に回す。
+    // 元の言葉「…」が書いてあれば、文が欠けないようにその言葉を黄色の印で残す
     const v = sections[k] || "記載なし";
-    for (const m of v.match(/【要確認[^】]*】/g) || []) checkItems.push(`${k} ${m}`);
-    setBox(k, v.replace(/\s*【要確認[^】]*】/g, ""));
+    for (const m of v.match(/【要確認[^】]*】/g) || []) checkItems.push(`${k} ${m.replace(/^【要確認[:：]?|】$/g, "")}`);
+    setBox(k, v.replace(/\s*【要確認[^】]*】/g, (m) => { const w = m.match(/「([^」]+)」/); return w ? ` 〘${w[1]}〙` : ""; }));
   }
   $("result").hidden = false;
   $("meta").textContent = meta || "";
