@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="音声カルテ">
+<title>音声カルテ要約</title>
+<style>
+  :root { --ink:#1f2933; --sub:#5b6773; --line:#d9dee3; --bg:#f6f7f9; --card:#fff; --acc:#0b6bcb; --acc-ink:#fff; --warn-bg:#fff4d6; --warn-line:#f0cf7a; --ng:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif; color:var(--ink); background:var(--bg); line-height:1.6; font-size:17px; -webkit-text-size-adjust:100%; }
+  main { max-width:820px; margin:0 auto; padding:12px 16px 40px; padding-top:max(12px, env(safe-area-inset-top)); }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  h1 { font-size:20px; margin:0; }
+  button { font:inherit; color:inherit; cursor:pointer; border-radius:10px; border:1px solid var(--line); background:var(--card); padding:10px 16px; min-height:44px; }
+  button.main { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
+  button:disabled { opacity:.45; cursor:default; }
+  .link { border:none; background:none; color:var(--sub); padding:8px; font-size:15px; }
+  .mode { display:flex; gap:8px; margin-bottom:10px; }
+  .mode button { flex:1; font-size:15px; }
+  .mode button.on { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
+  .mode small { display:block; font-size:12px; font-weight:400; }
+  textarea { width:100%; font:inherit; font-size:17px; color:var(--ink); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; resize:vertical; line-height:1.6; }
+  #input { min-height:32vh; }
+  .hint { color:var(--sub); font-size:14px; display:flex; justify-content:space-between; gap:8px; margin:4px 2px 0; }
+  .row-btns { display:flex; gap:10px; margin:12px 0; flex-wrap:wrap; }
+  .row-btns .main { flex:1; }
+  #status { color:var(--sub); font-size:15px; min-height:1.6em; }
+  #status.err { color:var(--ng); font-weight:700; }
+  .notice { background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:10px; padding:10px 12px; margin:10px 0; font-size:15px; }
+  .notice ul { margin:4px 0 0; padding-left:1.2em; }
+  .soap { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card); }
+  .sec { display:flex; border-top:1px solid var(--line); }
+  .sec:first-child { border-top:none; }
+  .sec .k { flex:0 0 40px; background:#eef3f8; font-weight:700; display:flex; justify-content:center; padding-top:12px; }
+  .sec textarea { border:none; border-radius:0; flex:1; min-height:3em; resize:none; overflow:hidden; }
+  .sec .c { flex:0 0 auto; padding:6px; }
+  .sec .c button { font-size:14px; padding:6px 10px; min-height:36px; }
+  .meta { color:var(--sub); font-size:13px; margin-top:6px; text-align:right; }
+  #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:#1f2933; color:#fff; padding:10px 18px; border-radius:20px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #toast.show { opacity:.92; }
+  dialog { border:1px solid var(--line); border-radius:14px; padding:16px; max-width:min(92vw, 480px); width:100%; color:var(--ink); background:var(--card); }
+  dialog label { display:block; font-size:15px; margin:10px 0 4px; }
+  dialog input { width:100%; font:inherit; font-size:17px; padding:10px; border:1px solid var(--line); border-radius:8px; }
+  dialog .muted { color:var(--sub); font-size:13px; }
+  [hidden] { display:none !important; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#e6e9ec; --sub:#9aa5b1; --line:#3a424a; --bg:#15191d; --card:#1f252b; --warn-bg:#3a3220; --warn-line:#6b5a2b; --ng:#ff7b6b; }
+    .sec .k { background:#26303a; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>音声カルテ要約</h1>
+    <button class="link" id="openSettings">⚙ 設定</button>
+  </header>
+
+  <div class="mode">
+    <button id="modeConv" disabled>① 会話を要約<small>準備中</small></button>
+    <button id="modeDict" class="on">② 口述を整える<small>治療後に1人で話す</small></button>
+  </div>
+
+  <textarea id="input" placeholder="ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。&#10;例:右下6番、3日前から冷たいものがしみる。打診マイナス…"></textarea>
+  <div class="hint"><span>聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
+
+  <div class="row-btns">
+    <button class="main" id="run">SOAPにまとめる</button>
+    <button id="clear">消す</button>
+  </div>
+  <div id="status" role="status"></div>
+
+  <section id="result" hidden>
+    <div class="notice" id="checks" hidden></div>
+    <div class="soap">
+      <div class="sec"><div class="k">S</div><textarea data-k="S" rows="1"></textarea><div class="c"><button data-copy="S">コピー</button></div></div>
+      <div class="sec"><div class="k">O</div><textarea data-k="O" rows="1"></textarea><div class="c"><button data-copy="O">コピー</button></div></div>
+      <div class="sec"><div class="k">A</div><textarea data-k="A" rows="1"></textarea><div class="c"><button data-copy="A">コピー</button></div></div>
+      <div class="sec"><div class="k">P</div><textarea data-k="P" rows="1"></textarea><div class="c"><button data-copy="P">コピー</button></div></div>
+    </div>
+    <div class="meta" id="meta"></div>
+    <div class="row-btns">
+      <button class="main" id="copyAll">全部コピー</button>
+      <button id="again">もう一度まとめる</button>
+    </div>
+    <div class="hint"><span>貼る前に必ず内容を確認してください。欄の中は直接直せます。</span></div>
+  </section>
+</main>
+
+<dialog id="settings">
+  <b>設定</b>
+  <label for="pass">合言葉</label>
+  <input id="pass" type="password" autocomplete="off">
+  <label for="api">中継サーバーのURL</label>
+  <input id="api" type="url" placeholder="ふつうは空欄のまま">
+  <p class="muted">この端末の中だけに保存します。</p>
+  <div class="row-btns"><button class="main" id="saveSettings">保存</button><button id="closeSettings">閉じる</button></div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+const KEYS = ["S", "O", "A", "P"];
+// 公開版(GitHub Pages)は Cloudflare の中継サーバーへ、Macの試作はこのページと同じ場所へ
+const DEFAULT_API = location.hostname.endsWith("github.io") ? "https://onsei-karte.kinmon-push.workers.dev" : "";
+const $ = (id) => document.getElementById(id);
+const input = $("input");
+const boxes = Object.fromEntries([...document.querySelectorAll(".sec textarea")].map((t) => [t.dataset.k, t]));
+
+// この端末だけの保存(直前の1件と設定)。使えない環境でも動くようにする
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+let settings = store.get("settings") || { pass: "", api: "" };
+
+// 「S:」「O:」…の見出しで4つに分ける
+function parseSoap(text) {
+  const out = { S: "", O: "", A: "", P: "" };
+  let cur = null;
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*([SOAP])\s*[:：]\s*(.*)$/);
+    if (m) { cur = m[1]; if (m[2]) out[cur] += m[2] + "\n"; }
+    else if (cur) out[cur] += line + "\n";
+  }
+  for (const k of KEYS) out[k] = out[k].trim();
+  if (!KEYS.some((k) => out[k])) out.S = text.trim(); // 見出しが無いときは全部Sに入れて見せる
+  return out;
+}
+
+function fit(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
+
+function showChecks() {
+  const items = KEYS.flatMap((k) => (boxes[k].value.match(/【要確認[^】]*】/g) || []).map((m) => `${k}: ${m}`));
+  const box = $("checks");
+  box.hidden = !items.length;
+  box.innerHTML = items.length ? `<b>【要確認】が${items.length}か所あります</b><ul>${items.map((i) => `<li>${i.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</li>`).join("")}</ul>` : "";
+}
+
+function showResult(sections, meta) {
+  for (const k of KEYS) { boxes[k].value = sections[k] || "記載なし"; }
+  $("result").hidden = false;
+  for (const k of KEYS) fit(boxes[k]);
+  $("meta").textContent = meta || "";
+  showChecks();
+}
+
+function saveLast() {
+  store.set("last", { input: input.value, sections: $("result").hidden ? null : Object.fromEntries(KEYS.map((k) => [k, boxes[k].value])), meta: $("meta").textContent });
+}
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 1500);
+}
+
+// 古い方法でのコピー(クリップボードAPIが使えない環境向け)
+function copyFallback(text) {
+  const t = document.createElement("textarea");
+  t.value = text; t.setAttribute("readonly", ""); t.style.position = "fixed"; t.style.opacity = "0";
+  document.body.appendChild(t); t.select(); t.setSelectionRange(0, text.length);
+  const ok = document.execCommand("copy");
+  t.remove();
+  return ok;
+}
+
+async function copy(text, label) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { ok = copyFallback(text); }
+  toast(ok ? `${label}をコピーしました` : "コピーできませんでした。欄を長押ししてコピーしてください");
+}
+
+function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
+
+let busy = false;
+async function run() {
+  const text = input.value.trim();
+  if (!text) { setStatus("話した内容がありません", true); return; }
+  if (busy) return;
+  busy = true; $("run").disabled = true; $("again").disabled = true;
+  const t0 = Date.now();
+  const tick = setInterval(() => setStatus(`まとめています… ${Math.round((Date.now() - t0) / 1000)}秒`), 500);
+  try {
+    const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/soap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Passphrase": settings.pass || "" },
+      body: JSON.stringify({ mode: "dictation", text }),
+    });
+    const data = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
+    if (!res.ok || data.error) throw new Error(data.error || `エラー(${res.status})`);
+    showResult(parseSoap(data.text), `${data.label}・${data.sec.toFixed(1)}秒・約${data.yen.toFixed(1)}円`);
+    setStatus("できました。内容を確認してからコピーしてください");
+    saveLast();
+  } catch (e) {
+    setStatus(e.message === "Failed to fetch" ? "サーバーにつながりません。通信状態と設定を確認してください" : e.message, true);
+  } finally {
+    clearInterval(tick); busy = false; $("run").disabled = false; $("again").disabled = false;
+  }
+}
+
+$("run").onclick = run;
+$("again").onclick = run;
+$("clear").onclick = () => {
+  if ((input.value || !$("result").hidden) && !confirm("話した内容とまとめを消します。よろしいですか?")) return;
+  input.value = ""; $("result").hidden = true; setStatus(""); $("count").textContent = "0字"; store.del("last");
+};
+input.addEventListener("input", () => { $("count").textContent = input.value.length + "字"; saveLast(); });
+for (const t of Object.values(boxes)) t.addEventListener("input", () => { fit(t); showChecks(); saveLast(); });
+document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(boxes[b.dataset.copy].value, b.dataset.copy));
+$("copyAll").onclick = () => copy(KEYS.map((k) => `${k}:\n${boxes[k].value}`).join("\n"), "全部");
+
+$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("settings").showModal(); };
+$("closeSettings").onclick = () => $("settings").close();
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim() }; store.set("settings", settings); $("settings").close(); toast("保存しました"); };
+
+// 直前の1件を戻す
+const last = store.get("last");
+if (last) {
+  input.value = last.input || ""; $("count").textContent = input.value.length + "字";
+  if (last.sections) showResult(last.sections, last.meta);
+}
+window.addEventListener("resize", () => { if (!$("result").hidden) for (const t of Object.values(boxes)) fit(t); });
+</script>
+</body>
+</html>
