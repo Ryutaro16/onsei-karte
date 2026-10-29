@@ -51,6 +51,9 @@
   .cost div { display:flex; justify-content:space-between; gap:14px; }
   .cost .sum { border-top:1px solid var(--line); padding-top:3px; margin-top:3px; font-weight:700; color:var(--ink); }
   .cost .note { justify-content:flex-end; font-size:11px; }
+  .usage-line { margin:28px 0 0; padding-top:10px; border-top:1px solid var(--line); color:var(--sub); font-size:13px; text-align:center; }
+  .usage-box { margin-top:16px; padding-top:12px; border-top:1px solid var(--line); font-size:15px; }
+  .usage-box .cost { max-width:none; margin:6px 0 0; color:var(--sub); }
   #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:#1f2933; color:#fff; padding:10px 18px; border-radius:20px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; }
   #toast.show { opacity:.92; }
   dialog { border:1px solid var(--line); border-radius:14px; padding:16px; max-width:min(92vw, 480px); width:100%; color:var(--ink); background:var(--card); }
@@ -108,6 +111,8 @@
     </div>
     <div class="hint"><span>貼る前に必ず内容を確認してください。欄の中は直接直せます。</span></div>
   </section>
+
+  <footer class="usage-line" id="usageLine" hidden></footer>
 </main>
 
 <dialog id="settings">
@@ -118,6 +123,11 @@
   <input id="api" type="url" placeholder="ふつうは空欄のまま">
   <p class="muted">この端末の中だけに保存します。</p>
   <div class="row-btns"><button class="main" id="saveSettings">保存</button><button id="closeSettings">閉じる</button></div>
+  <div class="usage-box">
+    <b>使った金額(すべての端末の合計)</b>
+    <div id="usageDetail" class="cost"></div>
+    <div class="row-btns"><button id="resetUsage">合計をリセット</button></div>
+  </div>
 </dialog>
 
 <div id="toast"></div>
@@ -271,6 +281,7 @@ async function run() {
     const data = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
     if (!res.ok || data.error) throw new Error(data.error || `エラー(${res.status})`);
     // 同じ内容で「もう一度まとめる」を押した分は足していく。内容が変わったら数え直す
+    if (data.usage) renderUsage(data.usage);
     if (runsText !== text) { summaryRuns = []; runsText = text; }
     summaryRuns.push(data.yen);
     const model = "Claude " + String(data.label).replace(/\s*\(.*\)\s*$/, "");
@@ -392,6 +403,7 @@ async function sendQueue() {
     if (!data) { failed.push(blob, ...queue); queue = []; $("retryBtn").hidden = false; setStatus("文字起こしに失敗しました:" + err, true); break; }
     if (data.text) { input.value += (input.value && !input.value.endsWith("\n") ? "\n" : "") + data.text; $("count").textContent = input.value.length + "字"; saveLast(); }
     doneCount++; transcribeYen += data.yen || 0;
+    if (data.usage) renderUsage(data.usage);
     recInfo();
   }
   sending = false; recInfo(); maybeSummarize();
@@ -415,14 +427,44 @@ $("clear").onclick = () => {
   doneCount = 0; transcribeYen = 0; summaryRuns = []; runsText = ""; lastMeta = null; failed = []; $("retryBtn").hidden = true; recInfo();
 };
 setMode(mode);
+loadUsage();
 input.addEventListener("input", () => { $("count").textContent = input.value.length + "字"; saveLast(); });
 for (const t of Object.values(boxes)) t.addEventListener("input", saveLast);
 document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(getPlain(b.dataset.copy), b.dataset.copy));
 $("copyAll").onclick = () => copy(KEYS.map((k) => `${k}:\n${getPlain(k)}`).join("\n"), "全部");
 
-$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("settings").showModal(); };
+$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("settings").showModal(); loadUsage(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim() }; store.set("settings", settings); $("settings").close(); toast("保存しました"); };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim() }; store.set("settings", settings); $("settings").close(); toast("保存しました"); loadUsage(); };
+
+// ---- 使った金額(全部の端末の合計。中継サーバーで数える) ----
+const yenText = (v) => `約${v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString()}円`;
+const dateText = (iso) => { const d = new Date(iso); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`; };
+function renderUsage(u) {
+  if (!u) { $("usageLine").hidden = true; $("usageDetail").textContent = "まだ記録がありません"; return; }
+  const total = u.claudeYen + u.openaiYen;
+  $("usageLine").hidden = false;
+  $("usageLine").textContent = `これまでの合計 ${yenText(total)}(${dateText(u.since)}から)`;
+  const min = Math.round(u.openaiSec / 60);
+  $("usageDetail").innerHTML =
+    `<div><span>まとめ(Claude)${u.claudeCount}回</span><span>${yenText(u.claudeYen)}</span></div>` +
+    `<div><span>文字起こし(OpenAI)約${min}分</span><span>${yenText(u.openaiYen)}</span></div>` +
+    `<div class="sum"><span>合計</span><span>${yenText(total)}</span></div>` +
+    `<div class="note">${dateText(u.since)}から数えています(1ドル150円で計算した目安)</div>`;
+}
+async function usageApi(action) {
+  const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/usage", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Passphrase": settings.pass || "" }, body: JSON.stringify({ action }),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok || d.error) throw new Error(d.error || `エラー(${res.status})`);
+  return d.usage;
+}
+async function loadUsage() { try { renderUsage(await usageApi("get")); } catch { /* 合言葉が未設定などのときは出さない */ } }
+$("resetUsage").onclick = async () => {
+  if (!confirm("使った金額の合計を0に戻します。すべての端末で0になります。よろしいですか?")) return;
+  try { renderUsage(await usageApi("reset")); toast("合計をリセットしました"); } catch (e) { toast("リセットできませんでした:" + e.message); }
+};
 
 // 直前の1件を戻す
 const last = store.get("last");
