@@ -117,31 +117,39 @@ const store = {
 };
 let settings = store.get("settings") || { pass: "", api: "" };
 
-// 「S:」「O:」…の見出しで4つに分ける
+// 「S:」「O:」「A:」「P:」と、貼らない「確認:」の見出しで分ける
 function parseSoap(text) {
-  const out = { S: "", O: "", A: "", P: "" };
+  const out = { S: "", O: "", A: "", P: "", 確認: "" };
   let cur = null;
   for (const line of text.split("\n")) {
-    const m = line.match(/^\s*([SOAP])\s*[:：]\s*(.*)$/);
+    const m = line.match(/^\s*([SOAP]|確認)\s*[:：]\s*(.*)$/);
     if (m) { cur = m[1]; if (m[2]) out[cur] += m[2] + "\n"; }
     else if (cur) out[cur] += line + "\n";
   }
-  for (const k of KEYS) out[k] = out[k].trim();
+  for (const k in out) out[k] = out[k].trim();
   if (!KEYS.some((k) => out[k])) out.S = text.trim(); // 見出しが無いときは全部Sに入れて見せる
   return out;
 }
 
 function fit(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
 
+// 貼る前に見る点(コピーには入れない)
+let checkItems = [];
 function showChecks() {
-  const items = KEYS.flatMap((k) => (boxes[k].value.match(/【要確認[^】]*】/g) || []).map((m) => `${k}: ${m}`));
   const box = $("checks");
-  box.hidden = !items.length;
-  box.innerHTML = items.length ? `<b>【要確認】が${items.length}か所あります</b><ul>${items.map((i) => `<li>${i.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</li>`).join("")}</ul>` : "";
+  box.hidden = !checkItems.length;
+  const esc = (s) => s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  box.innerHTML = checkItems.length ? `<b>貼る前に確認(${checkItems.length}件・コピーには入りません)</b><ul>${checkItems.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : "";
 }
 
 function showResult(sections, meta) {
-  for (const k of KEYS) { boxes[k].value = sections[k] || "記載なし"; }
+  checkItems = (sections.確認 || "").split("\n").map((l) => l.replace(/^\s*[・\-]\s*/, "").trim()).filter((l) => l && l !== "なし");
+  for (const k of KEYS) {
+    // 古い形(本文に【要確認】)が来たときも、本文からは外して確認欄に回す
+    const v = sections[k] || "記載なし";
+    for (const m of v.match(/【要確認[^】]*】/g) || []) checkItems.push(`${k} ${m}`);
+    boxes[k].value = v.replace(/\s*【要確認[^】]*】/g, "");
+  }
   $("result").hidden = false;
   for (const k of KEYS) fit(boxes[k]);
   $("meta").textContent = meta || "";
@@ -149,7 +157,8 @@ function showResult(sections, meta) {
 }
 
 function saveLast() {
-  store.set("last", { input: input.value, sections: $("result").hidden ? null : Object.fromEntries(KEYS.map((k) => [k, boxes[k].value])), meta: $("meta").textContent });
+  const sections = $("result").hidden ? null : { ...Object.fromEntries(KEYS.map((k) => [k, boxes[k].value])), 確認: checkItems.join("\n") };
+  store.set("last", { input: input.value, sections, meta: $("meta").textContent });
 }
 
 function toast(msg) {
@@ -167,9 +176,15 @@ function copyFallback(text) {
   return ok;
 }
 
+// 飾りのない文字だけをコピーする(貼った先に下線や色が付かないように)
 async function copy(text, label) {
   let ok = false;
-  try { await navigator.clipboard.writeText(text); ok = true; } catch { ok = copyFallback(text); }
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([text], { type: "text/plain" }) })]);
+    ok = true;
+  } catch {
+    try { await navigator.clipboard.writeText(text); ok = true; } catch { ok = copyFallback(text); }
+  }
   toast(ok ? `${label}をコピーしました` : "コピーできませんでした。欄を長押ししてコピーしてください");
 }
 
@@ -208,7 +223,7 @@ $("clear").onclick = () => {
   input.value = ""; $("result").hidden = true; setStatus(""); $("count").textContent = "0字"; store.del("last");
 };
 input.addEventListener("input", () => { $("count").textContent = input.value.length + "字"; saveLast(); });
-for (const t of Object.values(boxes)) t.addEventListener("input", () => { fit(t); showChecks(); saveLast(); });
+for (const t of Object.values(boxes)) t.addEventListener("input", () => { fit(t); saveLast(); });
 document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(boxes[b.dataset.copy].value, b.dataset.copy));
 $("copyAll").onclick = () => copy(KEYS.map((k) => `${k}:\n${boxes[k].value}`).join("\n"), "全部");
 
