@@ -39,6 +39,11 @@
   /* 推測して直した言葉:蛍光ペンで塗ったように(暗い画面でも同じ黄色) */
   mark.guess { background:#ffd84a; color:#1f2933; border-radius:4px; padding:0 2px; -webkit-box-decoration-break:clone; box-decoration-break:clone; }
   .legend mark { font-size:14px; }
+  .rec-box { margin-bottom:10px; }
+  .rec-box .row-btns { margin:0 0 6px; }
+  button.rec { flex:1; background:#c0392b; border-color:#c0392b; color:#fff; font-weight:700; }
+  button.rec.on { background:#fff; color:#c0392b; animation:blink 1.6s infinite; }
+  @keyframes blink { 50% { opacity:.6; } }
   .sec .c { flex:0 0 auto; padding:6px; }
   .sec .c button { font-size:14px; padding:6px 10px; min-height:36px; }
   .meta { color:var(--sub); font-size:13px; margin-top:6px; text-align:right; }
@@ -63,12 +68,20 @@
   </header>
 
   <div class="mode">
-    <button id="modeConv" disabled>① 会話を要約<small>準備中</small></button>
+    <button id="modeConv">① 会話を要約<small>録音して文字にする</small></button>
     <button id="modeDict" class="on">② 口述を整える<small>治療後に1人で話す</small></button>
   </div>
 
+  <div id="recBox" class="rec-box" hidden>
+    <div class="row-btns">
+      <button id="recBtn" class="rec">● 録音を始める</button>
+      <button id="retryBtn" hidden>文字起こしをやり直す</button>
+    </div>
+    <div id="recStatus" class="hint"></div>
+  </div>
+
   <textarea id="input" placeholder="ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。&#10;例:右下6番、3日前から冷たいものがしみる。打診マイナス…"></textarea>
-  <div class="hint"><span>聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
+  <div class="hint"><span id="inputHint">聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
 
   <div class="row-btns">
     <button class="main" id="run">SOAPにまとめる</button>
@@ -228,11 +241,12 @@ async function run() {
     const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/soap", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Passphrase": settings.pass || "" },
-      body: JSON.stringify({ mode: "dictation", text }),
+      body: JSON.stringify({ mode, text }),
     });
     const data = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
     if (!res.ok || data.error) throw new Error(data.error || `エラー(${res.status})`);
-    showResult(parseSoap(data.text), `${data.label}・${data.sec.toFixed(1)}秒・約${data.yen.toFixed(1)}円`);
+    const sttYen = mode === "conversation" && transcribeYen ? `・文字起こし約${transcribeYen.toFixed(1)}円` : "";
+    showResult(parseSoap(data.text), `${data.label}・${data.sec.toFixed(1)}秒・約${data.yen.toFixed(1)}円${sttYen}`);
     setStatus("できました。内容を確認してからコピーしてください");
     saveLast();
   } catch (e) {
@@ -242,12 +256,137 @@ async function run() {
   }
 }
 
+// ---- 使い方の切り替え(① 会話を要約/② 口述を整える) ----
+let mode = store.get("mode") === "conversation" ? "conversation" : "dictation";
+const MODE_TEXT = {
+  conversation: {
+    placeholder: "「● 録音を始める」を押して、患者さんとの会話を録音してください。1分ごとに文字になり、ここに入ります(直接直せます)。",
+    hint: "録音中は画面を閉じたり、ほかのアプリに切り替えたりしないでください。",
+  },
+  dictation: {
+    placeholder: "ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。\n例:右下6番、3日前から冷たいものがしみる。打診マイナス…",
+    hint: "聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。",
+  },
+};
+function setMode(m) {
+  if (recording) return;
+  mode = m; store.set("mode", m);
+  $("modeConv").classList.toggle("on", m === "conversation");
+  $("modeDict").classList.toggle("on", m === "dictation");
+  $("recBox").hidden = m !== "conversation";
+  input.placeholder = MODE_TEXT[m].placeholder;
+  $("inputHint").textContent = MODE_TEXT[m].hint;
+}
+$("modeConv").onclick = () => setMode("conversation");
+$("modeDict").onclick = () => setMode("dictation");
+
+// ---- 録音(① 会話)。無音でも止まらない。1分ごとに区切って文字起こしに送る ----
+const SEGMENT_MS = 60 * 1000;
+let recording = false, stream = null, recorder = null, segTimer = null, clock = null, wakeLock = null, recStart = 0;
+let queue = [], failed = [], sending = false, doneCount = 0, transcribeYen = 0, summarizeWhenDone = false;
+
+function pickType() {
+  for (const t of ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"]) if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
+  return "";
+}
+const mmss = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+function recInfo(extra = "") {
+  const parts = [];
+  if (recording) parts.push(`● 録音中 ${mmss(Date.now() - recStart)}`);
+  if (doneCount) parts.push(`文字にした区切り ${doneCount}本`);
+  if (sending || queue.length) parts.push(`文字起こし中…`);
+  if (failed.length) parts.push(`失敗 ${failed.length}本`);
+  $("recStatus").textContent = parts.join("・") + (extra ? "　" + extra : "");
+}
+
+async function keepAwake() {
+  try { wakeLock = await navigator.wakeLock?.request("screen"); } catch { wakeLock = null; }
+}
+document.addEventListener("visibilitychange", () => { if (recording && document.visibilityState === "visible") keepAwake(); });
+
+function startSegment() {
+  const type = pickType();
+  const r = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+  const parts = [];
+  r.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+  r.onstop = () => { if (parts.length) { queue.push(new Blob(parts, { type: r.mimeType || type })); sendQueue(); } };
+  r.start();
+  recorder = r;
+}
+
+async function startRecording() {
+  if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) { setStatus("この画面では録音できません。Safariのタブで開いてください", true); return; }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch {
+    setStatus("マイクを使えませんでした。マイクの使用を許可してください", true); return;
+  }
+  recording = true; recStart = Date.now(); summarizeWhenDone = false;
+  $("recBtn").textContent = "■ 録音を止めてまとめる"; $("recBtn").classList.add("on");
+  $("run").disabled = true; setStatus("");
+  startSegment();
+  segTimer = setInterval(() => { recorder.stop(); startSegment(); }, SEGMENT_MS);
+  clock = setInterval(() => recInfo(), 1000);
+  keepAwake(); recInfo();
+}
+
+function stopRecording() {
+  clearInterval(segTimer); clearInterval(clock);
+  recording = false; summarizeWhenDone = true;
+  recorder?.stop();
+  stream?.getTracks().forEach((t) => t.stop());
+  wakeLock?.release?.(); wakeLock = null;
+  $("recBtn").textContent = "● 録音を始める"; $("recBtn").classList.remove("on");
+  $("run").disabled = false;
+  recInfo(); maybeSummarize();
+}
+$("recBtn").onclick = () => (recording ? stopRecording() : startRecording());
+
+// 区切りを順番に送る。失敗したらそこで止めて、順番が入れ替わらないようにする
+async function sendQueue() {
+  if (sending || failed.length) return;
+  sending = true; recInfo();
+  while (queue.length) {
+    const blob = queue[0];
+    let data = null, err = "";
+    for (let i = 0; i < 3 && !data; i++) {
+      try {
+        const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/transcribe", {
+          method: "POST", headers: { "Content-Type": blob.type.split(";")[0], "X-Passphrase": settings.pass || "" }, body: blob,
+        });
+        const d = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
+        if (!res.ok || d.error) { err = d.error || `エラー(${res.status})`; if (res.status < 500) break; }
+        else data = d;
+      } catch { err = "サーバーにつながりません"; }
+      if (!data && i < 2) await new Promise((ok) => setTimeout(ok, 1500 * (i + 1)));
+    }
+    queue.shift();
+    if (!data) { failed.push(blob, ...queue); queue = []; $("retryBtn").hidden = false; setStatus("文字起こしに失敗しました:" + err, true); break; }
+    if (data.text) { input.value += (input.value && !input.value.endsWith("\n") ? "\n" : "") + data.text; $("count").textContent = input.value.length + "字"; saveLast(); }
+    doneCount++; transcribeYen += data.yen || 0;
+    recInfo();
+  }
+  sending = false; recInfo(); maybeSummarize();
+}
+$("retryBtn").onclick = () => { queue = failed.concat(queue); failed = []; $("retryBtn").hidden = true; setStatus(""); sendQueue(); };
+
+// 録音を止めて、全部の区切りが文字になったら、そのまままとめる
+function maybeSummarize() {
+  if (summarizeWhenDone && !recording && !sending && !queue.length && !failed.length) {
+    summarizeWhenDone = false;
+    if (input.value.trim()) run(); else setStatus("会話が聞き取れませんでした", true);
+  }
+}
+
 $("run").onclick = run;
 $("again").onclick = run;
 $("clear").onclick = () => {
+  if (recording) return;
   if ((input.value || !$("result").hidden) && !confirm("話した内容とまとめを消します。よろしいですか?")) return;
   input.value = ""; $("result").hidden = true; setStatus(""); $("count").textContent = "0字"; store.del("last");
+  doneCount = 0; transcribeYen = 0; failed = []; $("retryBtn").hidden = true; recInfo();
 };
+setMode(mode);
 input.addEventListener("input", () => { $("count").textContent = input.value.length + "字"; saveLast(); });
 for (const t of Object.values(boxes)) t.addEventListener("input", saveLast);
 document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(getPlain(b.dataset.copy), b.dataset.copy));
