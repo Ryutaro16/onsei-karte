@@ -47,6 +47,10 @@
   .sec .c { flex:0 0 auto; padding:6px; }
   .sec .c button { font-size:14px; padding:6px 10px; min-height:36px; }
   .meta { color:var(--sub); font-size:13px; margin-top:6px; text-align:right; }
+  .cost { max-width:320px; margin-left:auto; }
+  .cost div { display:flex; justify-content:space-between; gap:14px; }
+  .cost .sum { border-top:1px solid var(--line); padding-top:3px; margin-top:3px; font-weight:700; color:var(--ink); }
+  .cost .note { justify-content:flex-end; font-size:11px; }
   #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:#1f2933; color:#fff; padding:10px 18px; border-radius:20px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; }
   #toast.show { opacity:.92; }
   dialog { border:1px solid var(--line); border-radius:14px; padding:16px; max-width:min(92vw, 480px); width:100%; color:var(--ink); background:var(--card); }
@@ -191,13 +195,33 @@ function showResult(sections, meta) {
     setBox(k, v.replace(/\s*【要確認[^】]*】/g, (m) => { const w = m.match(/「([^」]+)」/); return w ? ` 〘${w[1]}〙` : ""; }));
   }
   $("result").hidden = false;
-  $("meta").textContent = meta || "";
+  lastMeta = meta || null;
+  renderMeta(lastMeta);
   showChecks();
+}
+
+// 費用の表示。meta = { stt:文字起こしの円, model, yen:今回のまとめの円, sec, runs:[同じ内容でまとめた各回の円] }
+let lastMeta = null;
+function renderMeta(m) {
+  const el = $("meta");
+  if (!m || typeof m === "string") { el.textContent = m || ""; return; } // 古い形で保存された表示
+  const yen = (v) => `約${v.toFixed(1)}円`;
+  const rows = [];
+  if (m.stt) rows.push(["文字起こし(OpenAI)", yen(m.stt)]);
+  rows.push([`まとめ(${m.model})`, `${yen(m.yen)}・${m.sec.toFixed(1)}秒`]);
+  let html = rows.map(([k, v]) => `<div><span>${esc(k)}</span><span>${v}</span></div>`).join("");
+  html += `<div class="sum"><span>合計</span><span>${yen((m.stt || 0) + m.yen)}</span></div>`;
+  if (m.runs && m.runs.length > 1) {
+    const all = (m.stt || 0) + m.runs.reduce((a, b) => a + b, 0);
+    html += `<div><span>もう一度の分を含む合計(まとめ${m.runs.length}回)</span><span>${yen(all)}</span></div>`;
+  }
+  html += `<div class="note">※1ドル150円で計算した目安</div>`;
+  el.innerHTML = `<div class="cost">${html}</div>`;
 }
 
 function saveLast() {
   const sections = $("result").hidden ? null : { ...Object.fromEntries(KEYS.map((k) => [k, getMarked(k)])), 確認: checkItems.join("\n") };
-  store.set("last", { input: input.value, sections, meta: $("meta").textContent });
+  store.set("last", { input: input.value, sections, meta: lastMeta, runs: summaryRuns, runsText, stt: transcribeYen });
 }
 
 function toast(msg) {
@@ -230,6 +254,7 @@ async function copy(text, label) {
 function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
 
 let busy = false;
+let summaryRuns = [], runsText = "";
 async function run() {
   const text = input.value.trim();
   if (!text) { setStatus("話した内容がありません", true); return; }
@@ -245,8 +270,11 @@ async function run() {
     });
     const data = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
     if (!res.ok || data.error) throw new Error(data.error || `エラー(${res.status})`);
-    const sttYen = mode === "conversation" && transcribeYen ? `・文字起こし約${transcribeYen.toFixed(1)}円` : "";
-    showResult(parseSoap(data.text), `${data.label}・${data.sec.toFixed(1)}秒・約${data.yen.toFixed(1)}円${sttYen}`);
+    // 同じ内容で「もう一度まとめる」を押した分は足していく。内容が変わったら数え直す
+    if (runsText !== text) { summaryRuns = []; runsText = text; }
+    summaryRuns.push(data.yen);
+    const model = "Claude " + String(data.label).replace(/\s*\(.*\)\s*$/, "");
+    showResult(parseSoap(data.text), { stt: mode === "conversation" ? transcribeYen : 0, model, yen: data.yen, sec: data.sec, runs: summaryRuns.slice() });
     setStatus("できました。内容を確認してからコピーしてください");
     saveLast();
   } catch (e) {
@@ -384,7 +412,7 @@ $("clear").onclick = () => {
   if (recording) return;
   if ((input.value || !$("result").hidden) && !confirm("話した内容とまとめを消します。よろしいですか?")) return;
   input.value = ""; $("result").hidden = true; setStatus(""); $("count").textContent = "0字"; store.del("last");
-  doneCount = 0; transcribeYen = 0; failed = []; $("retryBtn").hidden = true; recInfo();
+  doneCount = 0; transcribeYen = 0; summaryRuns = []; runsText = ""; lastMeta = null; failed = []; $("retryBtn").hidden = true; recInfo();
 };
 setMode(mode);
 input.addEventListener("input", () => { $("count").textContent = input.value.length + "字"; saveLast(); });
@@ -400,6 +428,7 @@ $("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("
 const last = store.get("last");
 if (last) {
   input.value = last.input || ""; $("count").textContent = input.value.length + "字";
+  summaryRuns = last.runs || []; runsText = last.runsText || ""; transcribeYen = last.stt || 0;
   if (last.sections) showResult(last.sections, last.meta);
 }</script>
 </body>
