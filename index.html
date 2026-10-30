@@ -268,6 +268,7 @@ function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.cla
 let busy = false;
 let summaryRuns = [], runsText = "";
 async function run() {
+  if (recording || sending || queue.length || !lastStopped) { setStatus("文字起こしが終わるまでお待ちください", true); return; }
   const text = input.value.trim();
   if (!text) { setStatus("話した内容がありません", true); return; }
   if (busy) return;
@@ -345,6 +346,8 @@ $("modeDict").onclick = () => {
 const SEGMENT_MS = 60 * 1000;
 let recording = false, stream = null, recorder = null, segTimer = null, clock = null, wakeLock = null, recStart = 0;
 let queue = [], failed = [], sending = false, doneCount = 0, transcribeYen = 0, summarizeWhenDone = false;
+// 止めるボタンのあと、最後の区切りが届いたか(iPhoneでは停止の知らせが少し遅れて来る)
+let lastStopped = true;
 
 function pickType() {
   for (const t of ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"]) if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
@@ -355,7 +358,7 @@ function recInfo(extra = "") {
   const parts = [];
   if (recording) parts.push(`● 録音中 ${mmss(Date.now() - recStart)}`);
   if (doneCount) parts.push(`文字にした区切り ${doneCount}本`);
-  if (sending || queue.length) parts.push(`文字起こし中…`);
+  if (sending || queue.length || !lastStopped) parts.push(`文字起こし中…`);
   if (failed.length) parts.push(`失敗 ${failed.length}本`);
   $("recStatus").textContent = parts.join("・") + (extra ? "　" + extra : "");
 }
@@ -370,7 +373,11 @@ function startSegment() {
   const r = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
   const parts = [];
   r.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
-  r.onstop = () => { if (parts.length && !r.discard) { queue.push(new Blob(parts, { type: r.mimeType || type })); sendQueue(); } };
+  r.onstop = () => {
+    // 止めるボタンで止めたときは、これが最後の区切り(1分ごとの区切りでは recording のまま)
+    if (!recording) lastStopped = true;
+    if (parts.length && !r.discard) { queue.push(new Blob(parts, { type: r.mimeType || type })); sendQueue(); } else { recInfo(); maybeSummarize(); }
+  };
   r.start();
   recorder = r;
 }
@@ -382,7 +389,7 @@ async function startRecording() {
   } catch {
     setStatus("マイクを使えませんでした。マイクの使用を許可してください", true); return;
   }
-  recording = true; recStart = Date.now(); summarizeWhenDone = false;
+  recording = true; recStart = Date.now(); summarizeWhenDone = false; lastStopped = false;
   $("recBox").hidden = false; $("cancelRec").hidden = false;
   $("recBtn").textContent = "■ 止めてまとめる"; $("recBtn").classList.add("on");
   $("run").disabled = true; setStatus("");
@@ -396,12 +403,13 @@ async function startRecording() {
 function stopRecording(summarize = true) {
   clearInterval(segTimer); clearInterval(clock);
   recording = false; summarizeWhenDone = summarize;
-  if (recorder) { recorder.discard = !summarize; recorder.stop(); }
+  if (recorder) { recorder.discard = !summarize; recorder.stop(); } else lastStopped = true;
   stream?.getTracks().forEach((t) => t.stop());
   wakeLock?.release?.(); wakeLock = null;
   $("recBtn").textContent = "● 録音を始める"; $("recBtn").classList.remove("on");
   $("cancelRec").hidden = true; $("recBox").hidden = mode !== "conversation";
-  $("run").disabled = false;
+  // まとめるときは、最後の区切りまで文字になるまで「まとめる」を押せないようにする
+  $("run").disabled = summarize;
   if (!summarize) setStatus("録音をやめました(この録音はまとめていません)");
   recInfo(); maybeSummarize();
 }
@@ -427,7 +435,7 @@ async function sendQueue() {
       if (!data && i < 2) await new Promise((ok) => setTimeout(ok, 1500 * (i + 1)));
     }
     queue.shift();
-    if (!data) { failed.push(blob, ...queue); queue = []; $("retryBtn").hidden = false; setStatus("文字起こしに失敗しました:" + err, true); break; }
+    if (!data) { failed.push(blob, ...queue); queue = []; $("retryBtn").hidden = false; $("run").disabled = false; setStatus("文字起こしに失敗しました:" + err, true); break; }
     if (data.text) { input.value += (input.value && !input.value.endsWith("\n") ? "\n" : "") + data.text; $("count").textContent = input.value.length + "字"; saveLast(); }
     doneCount++; transcribeYen += data.yen || 0;
     if (data.usage) renderUsage(data.usage);
@@ -439,8 +447,8 @@ $("retryBtn").onclick = () => { queue = failed.concat(queue); failed = []; $("re
 
 // 録音を止めて、全部の区切りが文字になったら、そのまままとめる
 function maybeSummarize() {
-  if (summarizeWhenDone && !recording && !sending && !queue.length && !failed.length) {
-    summarizeWhenDone = false;
+  if (summarizeWhenDone && lastStopped && !recording && !sending && !queue.length && !failed.length) {
+    summarizeWhenDone = false; $("run").disabled = false;
     if (input.value.trim()) run(); else setStatus("会話が聞き取れませんでした", true);
   }
 }
