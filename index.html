@@ -77,7 +77,7 @@
 
   <div class="mode">
     <button id="modeConv">① 会話を要約<small>押すとすぐ録音</small></button>
-    <button id="modeDict" class="on">② 口述を整える<small>2回押すと録音</small></button>
+    <button id="modeDict" class="on">② 口述を整える<small>キーボードの🎤で話す</small></button>
   </div>
 
   <div id="recBox" class="rec-box" hidden>
@@ -306,7 +306,7 @@ const MODE_TEXT = {
     hint: "録音中は画面を閉じたり、ほかのアプリに切り替えたりしないでください。",
   },
   dictation: {
-    placeholder: "②を1回押すとキーボードが開くので、🎤で話してください(Macは fn キーを2回)。②を2回続けて押すと、アプリで録音します。\n例:右下6番、3日前から冷たいものがしみる。打診マイナス…",
+    placeholder: "②を押すとキーボードが開くので、🎤で話してください(Macは fn キーを2回)。\n例:右下6番、3日前から冷たいものがしみる。打診マイナス…",
     hint: "聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。",
   },
 };
@@ -329,20 +329,15 @@ function beginRecordingFresh() {
 }
 // ① は押したらすぐ録音
 $("modeConv").onclick = () => { if (recording) return; setMode("conversation"); beginRecordingFresh(); };
-// ② は1回でキーボード(🎤はキーボードで押す)、2回続けて押すとアプリで録音。
-// キーボードは押した瞬間にしか開けないので、1回目で開き、2回目が来たら閉じて録音にする
-let lastDictTap = 0;
+// ② はキーボードを開くだけ(🎤はキーボードで押す。文字起こし代がかからない)
 $("modeDict").onclick = () => {
   if (recording) return;
-  const now = Date.now();
-  if (now - lastDictTap < 450) { lastDictTap = 0; input.blur(); setMode("dictation"); beginRecordingFresh(); return; }
-  lastDictTap = now;
   setMode("dictation");
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
 };
 
-// ---- 録音(① 会話と、② を2回押したとき)。無音でも止まらない。1分ごとに区切って文字起こしに送る ----
+// ---- 録音(① 会話)。無音でも止まらない。1分ごとに区切って文字起こしに送る ----
 const SEGMENT_MS = 60 * 1000;
 let recording = false, stream = null, recorder = null, segTimer = null, clock = null, wakeLock = null, recStart = 0;
 let queue = [], failed = [], sending = false, doneCount = 0, transcribeYen = 0, summarizeWhenDone = false;
