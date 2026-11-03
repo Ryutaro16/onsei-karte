@@ -44,6 +44,7 @@
   .rec-box { margin-bottom:10px; }
   .rec-box .row-btns { margin:0 0 6px; }
   #cancelRec { flex:1; }
+  #shareAll { flex:1; }
   button.rec { flex:2; background:#c0392b; border-color:#c0392b; color:#fff; font-weight:700; }
   button.rec.on { background:#fff; color:#c0392b; animation:blink 1.6s infinite; }
   @keyframes blink { 50% { opacity:.6; } }
@@ -122,7 +123,7 @@
     <div class="meta" id="meta"></div>
     <div class="row-btns">
       <button class="main" id="copyAll">全部コピー</button>
-      <button id="again">もう一度まとめる</button>
+      <button id="shareAll" hidden>iPadへ送る</button>
     </div>
     <div class="hint"><span>貼る前に必ず内容を確認してください。欄の中は直接直せます。</span></div>
   </section>
@@ -297,7 +298,7 @@ async function run() {
   const text = input.value.trim();
   if (!text) { setStatus("話した内容がありません", true); return; }
   if (busy) return;
-  busy = true; $("run").disabled = true; $("again").disabled = true;
+  busy = true; $("run").disabled = true;
   const t0 = Date.now();
   const tick = setInterval(() => setStatus(`まとめています… ${Math.round((Date.now() - t0) / 1000)}秒`), 500);
   try {
@@ -319,7 +320,7 @@ async function run() {
   } catch (e) {
     setStatus(e.message === "Failed to fetch" ? "サーバーにつながりません。通信状態と設定を確認してください" : e.message, true);
   } finally {
-    clearInterval(tick); busy = false; $("run").disabled = false; $("again").disabled = false;
+    clearInterval(tick); busy = false; $("run").disabled = false;
   }
 }
 
@@ -474,7 +475,6 @@ function maybeSummarize() {
 }
 
 $("run").onclick = run;
-$("again").onclick = run;
 function clearAll() {
   input.value = ""; $("result").hidden = true; setStatus(""); $("count").textContent = "0字"; store.del("last");
   doneCount = 0; transcribeYen = 0; summaryRuns = []; runsText = ""; lastMeta = null; failed = []; $("retryBtn").hidden = true; recInfo();
@@ -498,7 +498,13 @@ input.addEventListener("input", () => { $("count").textContent = input.value.len
 for (const t of Object.values(boxes)) t.addEventListener("input", saveLast);
 document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(getPlain(b.dataset.copy), b.dataset.copy));
 // 「S:」の行が空かないよう、見出しのすぐ後ろに1行目を続ける(カルテに貼ったときに詰まる)
-$("copyAll").onclick = () => copy(KEYS.map((k) => `${k}:${getPlain(k).replace(/^\s+/, "")}`).join("\n"), "全部");
+const allText = () => KEYS.map((k) => `${k}:${getPlain(k).replace(/^\s+/, "")}`).join("\n");
+$("copyAll").onclick = () => copy(allText(), "全部");
+// 別の端末(共用iPad など)へは共有シートの AirDrop で送る。インターネットを通らず端末どうしで届く
+if (navigator.share) $("shareAll").hidden = false;
+$("shareAll").onclick = async () => {
+  try { await navigator.share({ text: allText() }); touchLast(); } catch { /* 閉じただけ */ }
+};
 
 $("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("settings").showModal(); loadUsage(); };
 $("closeSettings").onclick = () => $("settings").close();
