@@ -69,6 +69,13 @@
   details.month .cost { font-size:14px; }
   details.month h5 { margin:10px 0 2px; font-size:13px; color:var(--ink); }
   #exportCsv { width:100%; margin-top:10px; }
+  .hist-day { margin:14px 0 4px; font-size:14px; color:var(--sub); font-weight:700; }
+  .hist-item { border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin:6px 0; }
+  .hist-item.cur { border-color:var(--acc); }
+  .hist-item .top { display:flex; justify-content:space-between; gap:8px; font-size:13px; color:var(--sub); }
+  .hist-item .txt { font-size:15px; margin:2px 0 6px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; word-break:break-all; }
+  .hist-item .row-btns { margin:0; gap:8px; }
+  .hist-item .row-btns button { flex:1; font-size:14px; padding:6px 10px; min-height:38px; }
   #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:#1f2933; color:#fff; padding:10px 18px; border-radius:20px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; }
   #toast.show { opacity:.92; }
   dialog { border:1px solid var(--line); border-radius:14px; padding:16px; max-width:min(92vw, 480px); width:100%; color:var(--ink); background:var(--card); }
@@ -86,7 +93,7 @@
 <main>
   <header>
     <h1>音声カルテ要約</h1>
-    <button class="link" id="openSettings">⚙ 設定</button>
+    <div><button class="link" id="openHistory">🕘 履歴</button><button class="link" id="openSettings">⚙ 設定</button></div>
   </header>
 
   <div class="mode">
@@ -139,6 +146,8 @@
   <input id="api" type="url" placeholder="ふつうは空欄のまま">
   <label for="autoClear">触らずに時間がたったら、話した内容とまとめを自動で消す</label>
   <select id="autoClear"><option value="0">消さない</option><option value="5">5分</option><option value="10">10分</option><option value="30">30分</option><option value="60">60分</option></select>
+  <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
+  <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option></select>
   <label for="device">この端末の名前(使った記録に残します。例:院長iPhone・共用iPad)</label>
   <input id="device" type="text" maxlength="30" placeholder="名前なし">
   <p class="muted">この端末の中だけに保存します。</p>
@@ -152,6 +161,13 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">「合計をリセット」しても、月ごとの記録とCSVは消えません。話した内容は記録しません(字数・長さ・金額だけ)。</p>
   </div>
+</dialog>
+
+<dialog id="history">
+  <b>まとめの履歴</b>
+  <p class="muted" id="histNote"></p>
+  <div id="histList"></div>
+  <div class="row-btns"><button class="main" id="closeHistory">閉じる</button><button id="clearHistory">履歴を全部消す</button></div>
 </dialog>
 
 <div id="toast"></div>
@@ -200,6 +216,7 @@ let settings = store.get("settings") || { pass: "", api: "" };
 if (settings.autoClear == null) settings.autoClear = 0;
 // 2026-11-04 初期値を10分→消さないに。前の初期値のままの端末は一度だけ「消さない」に直す(⚙設定で保存した後は acSet で触らない)
 else if (settings.autoClear === 10 && !settings.acSet) { settings.autoClear = 0; settings.acSet = 1; store.set("settings", settings); }
+if (settings.keepDays == null) settings.keepDays = 7; // まとめの履歴を残す日数(0=残さない、1=その日だけ)
 
 // 「S:」「O:」「A:」「P:」と、貼らない「確認:」の見出しで分ける
 function parseSoap(text) {
@@ -257,9 +274,41 @@ function renderMeta(m) {
   el.innerHTML = `<div class="cost">${html}</div>`;
 }
 
+const curSections = () => ($("result").hidden ? null : { ...Object.fromEntries(KEYS.map((k) => [k, getMarked(k)])), 確認: checkItems.join("\n") });
+let histTimer = null;
 function saveLast() {
-  const sections = $("result").hidden ? null : { ...Object.fromEntries(KEYS.map((k) => [k, getMarked(k)])), 確認: checkItems.join("\n") };
-  store.set("last", { input: input.value, sections, meta: lastMeta, runs: summaryRuns, runsText, stt: transcribeYen, t: Date.now() });
+  store.set("last", { input: input.value, sections: curSections(), meta: lastMeta, runs: summaryRuns, runsText, stt: transcribeYen, hid: curId, t: Date.now() });
+  // 履歴に入っている1件を直したら、履歴の方も直す(打つたびに書かないよう少し待つ)
+  if (curId) { clearTimeout(histTimer); histTimer = setTimeout(putHistory, 1000); }
+}
+
+// ---- まとめの履歴(この端末の中だけ。サーバーには送らない)。間違えて消した・コピーし忘れたときに戻せるように ----
+// 1件 = { id, at:作った時刻, mode, input:話した内容, sections:まとめ(〘〙の印つき。まとめる前に消したものは null), meta }
+const HIST_MAX = 500;
+let curId = null; // 画面に出ている1件の、履歴での id
+const loadHistory = () => store.get("history") || [];
+// 残す期間を過ぎたものを消して保存。端末の保存がいっぱいのときは古いものから減らして入れ直す
+function saveHistory(list) {
+  const days = Number(settings.keepDays) || 0;
+  if (!days) { store.del("history"); return []; }
+  const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - (days - 1)); // 「その日だけ」=今日の0時から
+  list = list.filter((h) => h.at >= from.getTime()).slice(0, HIST_MAX);
+  while (list.length) {
+    try { localStorage.setItem("history", JSON.stringify(list)); return list; } catch { list = list.slice(0, Math.floor(list.length * 0.8)); }
+  }
+  store.del("history");
+  return list;
+}
+// 画面の1件を履歴に入れる(履歴にある1件なら上書き)
+function putHistory() {
+  clearTimeout(histTimer);
+  if (!Number(settings.keepDays)) return;
+  const sections = curSections();
+  if (!input.value.trim() && !sections) return;
+  const list = loadHistory(), old = curId && list.find((h) => h.id === curId);
+  if (old) Object.assign(old, { input: input.value, sections, meta: lastMeta });
+  else { curId = Date.now().toString(36); list.unshift({ id: curId, at: Date.now(), mode, input: input.value, sections, meta: lastMeta }); }
+  saveHistory(list);
 }
 
 function toast(msg) {
@@ -318,6 +367,7 @@ async function run() {
     summaryRuns.push(data.yen);
     const model = "Claude " + String(data.label).replace(/\s*\(.*\)\s*$/, "");
     showResult(parseSoap(data.text), { stt: transcribeYen, model, yen: data.yen, sec: data.sec, runs: summaryRuns.slice() });
+    putHistory();
     setStatus("できました。内容を確認してからコピーしてください");
     saveLast();
   } catch (e) {
@@ -479,6 +529,7 @@ function maybeSummarize() {
 
 $("run").onclick = run;
 function clearAll() {
+  putHistory(); curId = null; // 消す前に履歴へ(まとめる前の内容も残す)
   input.value = ""; $("result").hidden = true; setStatus(""); $("count").textContent = "0字"; store.del("last");
   doneCount = 0; transcribeYen = 0; summaryRuns = []; runsText = ""; lastMeta = null; failed = []; $("retryBtn").hidden = true; recInfo();
 }
@@ -501,7 +552,8 @@ input.addEventListener("input", () => { $("count").textContent = input.value.len
 for (const t of Object.values(boxes)) t.addEventListener("input", saveLast);
 document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(getPlain(b.dataset.copy), b.dataset.copy));
 // 「S:」の行が空かないよう、見出しのすぐ後ろに1行目を続ける(カルテに貼ったときに詰まる)
-const allText = () => KEYS.map((k) => `${k}:${getPlain(k).replace(/^\s+/, "")}`).join("\n");
+const soapText = (get) => KEYS.map((k) => `${k}:${get(k).replace(/^\s+/, "")}`).join("\n");
+const allText = () => soapText(getPlain);
 $("copyAll").onclick = () => copy(allText(), "全部");
 // 別の端末(共用iPad など)へは共有シートの AirDrop で送る。インターネットを通らず端末どうしで届く
 if (navigator.share) $("shareAll").hidden = false;
@@ -509,9 +561,58 @@ $("shareAll").onclick = async () => {
   try { await navigator.share({ text: allText() }); touchLast(); } catch { /* 閉じただけ */ }
 };
 
-$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("settings").showModal(); loadUsage(); };
+$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("settings").showModal(); loadUsage(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1 }; store.set("settings", settings); $("settings").close(); toast("保存しました"); loadUsage(); };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, keepDays: Number($("keepDays").value) }; store.set("settings", settings); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
+
+// ---- 履歴の画面 ----
+const MODE_NAME = { conversation: "①会話", dictation: "②口述" };
+const histPlain = (h) => (k) => (h.sections[k] || "").replace(/[〘〙]/g, "").trim();
+function renderHistory() {
+  const list = saveHistory(loadHistory()), days = Number(settings.keepDays) || 0;
+  $("histNote").textContent = days ? `この端末の中だけに${days === 1 ? "その日の分" : `${days}日分`}残します(⚙設定で変えられます)。サーバーには残りません。` : "履歴を残さない設定です(⚙設定で変えられます)。";
+  if (!list.length) { $("histList").innerHTML = `<p class="muted">まだ履歴がありません</p>`; return; }
+  let day = "";
+  $("histList").innerHTML = list.map((h) => {
+    const d = new Date(h.at), dk = `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
+    const head = dk !== day ? `<div class="hist-day">${dk}</div>` : "";
+    day = dk;
+    const txt = h.sections ? KEYS.map(histPlain(h)).filter((v) => v && v !== "記載なし").map((v) => v.replace(/^・\s*/gm, "").replace(/\n/g, " ")).join(" / ") : h.input;
+    const info = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")} ${MODE_NAME[h.mode] || ""}${h.sections ? "" : "・まとめる前"}${h.id === curId ? "・表示中" : ""}`;
+    return head + `<div class="hist-item${h.id === curId ? " cur" : ""}"><div class="top"><span>${info}</span><span>${(h.input || "").length}字</span></div>` +
+      `<div class="txt">${esc(txt.slice(0, 120))}</div><div class="row-btns">${h.sections ? `<button data-hcopy="${h.id}">全部コピー</button>` : ""}` +
+      `<button data-hopen="${h.id}">開く</button><button data-hdel="${h.id}">消す</button></div></div>`;
+  }).join("");
+}
+// 履歴の1件を画面に出す。今の画面の内容は履歴に入れてから入れ替える
+function openHistory(h) {
+  if (recording || busy || sending || queue.length || !lastStopped) { toast("録音中・まとめ中は出せません"); return; }
+  clearAll();
+  setMode(h.mode === "conversation" ? "conversation" : "dictation");
+  input.value = h.input || ""; $("count").textContent = input.value.length + "字";
+  curId = h.id; runsText = input.value.trim(); summaryRuns = (h.meta && h.meta.runs) || []; transcribeYen = (h.meta && h.meta.stt) || 0;
+  if (h.sections) showResult(h.sections, h.meta);
+  saveLast();
+  $("history").close(); toast("履歴から出しました");
+}
+$("openHistory").onclick = () => { if (curId) putHistory(); renderHistory(); $("history").showModal(); };
+$("closeHistory").onclick = () => $("history").close();
+$("histList").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const id = b.dataset.hcopy || b.dataset.hopen || b.dataset.hdel, list = loadHistory(), h = list.find((x) => x.id === id);
+  if (!h) return;
+  if (b.dataset.hcopy) copy(soapText(histPlain(h)), "全部");
+  else if (b.dataset.hopen) openHistory(h);
+  else if (confirm("この1件を履歴から消します。よろしいですか?")) {
+    saveHistory(list.filter((x) => x.id !== id));
+    if (id === curId) { curId = null; saveLast(); }
+    renderHistory();
+  }
+};
+$("clearHistory").onclick = () => {
+  if (!confirm("この端末の履歴を全部消します。よろしいですか?")) return;
+  store.del("history"); curId = null; saveLast(); renderHistory();
+};
 
 // ---- 使った金額(全部の端末の合計。中継サーバーで数える) ----
 const yenText = (v) => `約${v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString()}円`;
@@ -589,11 +690,12 @@ $("resetUsage").onclick = async () => {
 // 直前の1件を戻す
 const last = store.get("last");
 if (last && !last.t) { last.t = Date.now(); store.set("last", last); } // 時刻のない古い保存は、今から数える
-if (last && !autoClear()) {
+if (last) {
   input.value = last.input || ""; $("count").textContent = input.value.length + "字";
-  summaryRuns = last.runs || []; runsText = last.runsText || ""; transcribeYen = last.stt || 0;
+  summaryRuns = last.runs || []; runsText = last.runsText || ""; transcribeYen = last.stt || 0; curId = last.hid || null;
   if (last.sections) showResult(last.sections, last.meta);
 }
+autoClear(); // 時間がたっていたら、戻した内容を履歴に入れてから消す(同じ処理の中なので画面には出ない)
 setInterval(autoClear, 30000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoClear(); });</script>
 </body>
