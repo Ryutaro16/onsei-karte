@@ -196,7 +196,10 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
 let settings = store.get("settings") || { pass: "", api: "" };
-if (settings.autoClear == null) settings.autoClear = 10; // 触らずにこの分数たったら直前の1件を消す(0=消さない)
+// 触らずにこの分数たったら直前の1件を消す(0=消さない)。初期値は全部の端末で「消さない」(使う端末ごとに⚙設定で選ぶ)
+if (settings.autoClear == null) settings.autoClear = 0;
+// 2026-11-04 初期値を10分→消さないに。前の初期値のままの端末は一度だけ「消さない」に直す(⚙設定で保存した後は acSet で触らない)
+else if (settings.autoClear === 10 && !settings.acSet) { settings.autoClear = 0; settings.acSet = 1; store.set("settings", settings); }
 
 // 「S:」「O:」「A:」「P:」と、貼らない「確認:」の見出しで分ける
 function parseSoap(text) {
@@ -508,7 +511,7 @@ $("shareAll").onclick = async () => {
 
 $("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("settings").showModal(); loadUsage(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim() }; store.set("settings", settings); $("settings").close(); toast("保存しました"); loadUsage(); };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1 }; store.set("settings", settings); $("settings").close(); toast("保存しました"); loadUsage(); };
 
 // ---- 使った金額(全部の端末の合計。中継サーバーで数える) ----
 const yenText = (v) => `約${v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString()}円`;
