@@ -19,6 +19,7 @@
   button.main { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
   button:disabled { opacity:.45; cursor:default; }
   .link { border:none; background:none; color:var(--sub); padding:8px; font-size:15px; }
+  #resetUsage { min-height:0; padding:4px 0; font-size:13px; text-decoration:underline; }
   .mode { display:flex; gap:8px; margin-bottom:10px; }
   .mode button { flex:1; font-size:15px; touch-action:manipulation; }
   .mode button.on { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
@@ -159,7 +160,7 @@
   <label for="aiModel">まとめのAI(①②とも)</label>
   <select id="aiModel"><option value="opus">Opus(精度重視・②1回 約1.3円)</option><option value="sonnet">Sonnet(節約・②1回 約0.7円)</option></select>
   <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
-  <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option></select>
+  <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option><option value="-1">ずっと(いっぱいになったら古い順に消える)</option></select>
   <label for="device">この端末の名前(使った記録に残します。例:院長iPhone・共用iPad)</label>
   <input id="device" type="text" maxlength="30" placeholder="名前なし">
   <p class="muted">この端末の中だけに保存します。</p>
@@ -167,11 +168,11 @@
   <div class="usage-box">
     <b>使った金額(すべての端末の合計)</b>
     <div id="usageDetail" class="cost"></div>
-    <div class="row-btns"><button id="resetUsage">合計をリセット</button></div>
     <h4>月ごとの記録</h4>
     <div id="usageMonths" class="muted">読み込み中…</div>
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
-    <p class="muted">「合計をリセット」しても、月ごとの記録とCSVは消えません。話した内容は記録しません(字数・長さ・金額だけ)。</p>
+    <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
+    <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
   </div>
 </dialog>
 
@@ -228,7 +229,7 @@ let settings = store.get("settings") || { pass: "", api: "" };
 if (settings.autoClear == null) settings.autoClear = 0;
 // 2026-11-04 初期値を10分→消さないに。前の初期値のままの端末は一度だけ「消さない」に直す(⚙設定で保存した後は acSet で触らない)
 else if (settings.autoClear === 10 && !settings.acSet) { settings.autoClear = 0; settings.acSet = 1; store.set("settings", settings); }
-if (settings.keepDays == null) settings.keepDays = 7; // まとめの履歴を残す日数(0=残さない、1=その日だけ)
+if (settings.keepDays == null) settings.keepDays = 7; // まとめの履歴を残す日数(0=残さない、1=その日だけ、-1=ずっと)
 
 // 「S:」「O:」「A:」「P:」と、貼らない「確認:」の見出しで分ける
 function parseSoap(text) {
@@ -296,15 +297,18 @@ function saveLast() {
 
 // ---- まとめの履歴(この端末の中だけ。サーバーには送らない)。間違えて消した・コピーし忘れたときに戻せるように ----
 // 1件 = { id, at:作った時刻, mode, input:話した内容, sections:まとめ(〘〙の印つき。まとめる前に消したものは null), meta }
-const HIST_MAX = 500;
+const HIST_MAX = 5000; // 件数の上限(ふつうは先に端末の保存がいっぱいになり、古いものから減らす)
 let curId = null; // 画面に出ている1件の、履歴での id
 const loadHistory = () => store.get("history") || [];
 // 残す期間を過ぎたものを消して保存。端末の保存がいっぱいのときは古いものから減らして入れ直す
 function saveHistory(list) {
   const days = Number(settings.keepDays) || 0;
   if (!days) { store.del("history"); return []; }
-  const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - (days - 1)); // 「その日だけ」=今日の0時から
-  list = list.filter((h) => h.at >= from.getTime()).slice(0, HIST_MAX);
+  if (days > 0) {
+    const from = new Date(); from.setHours(0, 0, 0, 0); from.setDate(from.getDate() - (days - 1)); // 「その日だけ」=今日の0時から
+    list = list.filter((h) => h.at >= from.getTime());
+  }
+  list = list.slice(0, HIST_MAX);
   while (list.length) {
     try { localStorage.setItem("history", JSON.stringify(list)); return list; } catch { list = list.slice(0, Math.floor(list.length * 0.8)); }
   }
@@ -600,7 +604,8 @@ const MODE_NAME = { conversation: "①会話", dictation: "②口述" };
 const histPlain = (h) => (k) => (h.sections[k] || "").replace(/[〘〙]/g, "").trim();
 function renderHistory() {
   const list = saveHistory(loadHistory()), days = Number(settings.keepDays) || 0;
-  $("histNote").textContent = days ? `この端末の中だけに${days === 1 ? "その日の分" : `${days}日分`}残します(⚙設定で変えられます)。サーバーには残りません。` : "履歴を残さない設定です(⚙設定で変えられます)。";
+  $("histNote").textContent = !days ? "履歴を残さない設定です(⚙設定で変えられます)。"
+    : `この端末の中だけに${days < 0 ? "ずっと" : days === 1 ? "その日の分" : `${days}日分`}残します(⚙設定で変えられます)。${days < 0 ? "保存がいっぱいになると古いものから消えます。" : ""}サーバーには残りません。`;
   if (!list.length) { $("histList").innerHTML = `<p class="muted">まだ履歴がありません</p>`; return; }
   let day = "";
   $("histList").innerHTML = list.map((h) => {
@@ -713,7 +718,9 @@ $("exportCsv").onclick = async () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 $("resetUsage").onclick = async () => {
+  // 押し間違いで消えないよう2回聞く
   if (!confirm("使った金額の合計を0に戻します。すべての端末で0になります。よろしいですか?")) return;
+  if (!confirm("本当に合計を0にしますか?(元に戻せません)")) return;
   try { renderUsage(await usageApi("reset")); toast("合計をリセットしました"); } catch (e) { toast("リセットできませんでした:" + e.message); }
 };
 
