@@ -180,6 +180,8 @@
   <b>まとめの履歴</b>
   <p class="muted" id="histNote"></p>
   <div id="histList"></div>
+  <button id="exportHistory" style="width:100%;margin-top:10px">履歴をCSVで書き出す(分析用・この端末の分)</button>
+  <p class="muted">CSVには話した内容とまとめも入ります。ファイルに保存するかMacへ送り、外に公開しないでください。</p>
   <div class="row-btns"><button class="main" id="closeHistory">閉じる</button><button id="clearHistory">履歴を全部消す</button></div>
 </dialog>
 
@@ -270,6 +272,8 @@ function showResult(sections, meta) {
 
 // 費用の表示。meta = { stt:文字起こしの円, model, yen:今回のまとめの円, sec, runs:[同じ内容でまとめた各回の円] }
 let lastMeta = null;
+// 分析用の数字(履歴とCSVに残す)。audioSec=録音の長さ sttSec=文字起こしの処理時間の合計 segs=区切りの数 afterStop=止めてから全部文字になるまでの秒
+let recStats = null;
 function renderMeta(m) {
   const el = $("meta");
   if (!m || typeof m === "string") { el.textContent = m || ""; return; } // 古い形で保存された表示
@@ -290,7 +294,7 @@ function renderMeta(m) {
 const curSections = () => ($("result").hidden ? null : { ...Object.fromEntries(KEYS.map((k) => [k, getMarked(k)])), 確認: checkItems.join("\n") });
 let histTimer = null;
 function saveLast() {
-  store.set("last", { input: input.value, sections: curSections(), meta: lastMeta, runs: summaryRuns, runsText, stt: transcribeYen, hid: curId, t: Date.now() });
+  store.set("last", { input: input.value, sections: curSections(), meta: lastMeta, runs: summaryRuns, runsText, stt: transcribeYen, rec: recStats, hid: curId, t: Date.now() });
   // 履歴に入っている1件を直したら、履歴の方も直す(打つたびに書かないよう少し待つ)
   if (curId) { clearTimeout(histTimer); histTimer = setTimeout(putHistory, 1000); }
 }
@@ -322,8 +326,8 @@ function putHistory() {
   const sections = curSections();
   if (!input.value.trim() && !sections) return;
   const list = loadHistory(), old = curId && list.find((h) => h.id === curId);
-  if (old) Object.assign(old, { input: input.value, sections, meta: lastMeta });
-  else { curId = Date.now().toString(36); list.unshift({ id: curId, at: Date.now(), mode, input: input.value, sections, meta: lastMeta }); }
+  if (old) Object.assign(old, { input: input.value, sections, meta: lastMeta, rec: recStats, device: settings.device || "" });
+  else { curId = Date.now().toString(36); list.unshift({ id: curId, at: Date.now(), mode, input: input.value, sections, meta: lastMeta, rec: recStats, device: settings.device || "" }); }
   saveHistory(list);
 }
 
@@ -382,7 +386,7 @@ async function run() {
     if (runsText !== text) { summaryRuns = []; runsText = text; }
     summaryRuns.push(data.yen);
     const model = "Claude " + String(data.label).replace(/\s*\(.*\)\s*$/, "");
-    showResult(parseSoap(data.text), { stt: transcribeYen, model, yen: data.yen, sec: data.sec, runs: summaryRuns.slice() });
+    showResult(parseSoap(data.text), { stt: transcribeYen, model, yen: data.yen, sec: data.sec, wait: (Date.now() - t0) / 1000, runs: summaryRuns.slice() });
     putHistory();
     setStatus("できました。内容を確認してからコピーしてください");
     saveLast();
@@ -438,6 +442,7 @@ let recording = false, stream = null, recorder = null, segTimer = null, clock = 
 let queue = [], failed = [], sending = false, doneCount = 0, transcribeYen = 0, summarizeWhenDone = false;
 // 止めるボタンのあと、最後の区切りが届いたか(iPhoneでは停止の知らせが少し遅れて来る)
 let lastStopped = true;
+let stopAt = 0; // 「止めてまとめる」を押した時刻(全部文字になるまでの秒を測る)
 
 function pickType() {
   for (const t of ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"]) if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
@@ -480,6 +485,7 @@ async function startRecording() {
     setStatus("マイクを使えませんでした。マイクの使用を許可してください", true); return;
   }
   recording = true; recStart = Date.now(); summarizeWhenDone = false; lastStopped = false;
+  recStats = recStats || { audioSec: 0, sttSec: 0, segs: 0, afterStop: null };
   $("recBox").hidden = false; $("cancelRec").hidden = false;
   $("recBtn").textContent = "■ 止めてまとめる"; $("recBtn").classList.add("on");
   $("run").disabled = true; setStatus("");
@@ -492,7 +498,7 @@ async function startRecording() {
 // summarize=false は「やめる」:最後の区切りは文字にせず、まとめもしない
 function stopRecording(summarize = true) {
   clearInterval(segTimer); clearInterval(clock);
-  recording = false; summarizeWhenDone = summarize;
+  recording = false; summarizeWhenDone = summarize; stopAt = summarize ? Date.now() : 0;
   if (recorder) { recorder.discard = !summarize; recorder.stop(); } else lastStopped = true;
   stream?.getTracks().forEach((t) => t.stop());
   wakeLock?.release?.(); wakeLock = null;
@@ -528,6 +534,7 @@ async function sendQueue() {
     if (!data) { failed.push(blob, ...queue); queue = []; $("retryBtn").hidden = false; $("run").disabled = false; setStatus("文字起こしに失敗しました:" + err, true); break; }
     if (data.text) { input.value += (input.value && !input.value.endsWith("\n") ? "\n" : "") + data.text; $("count").textContent = input.value.length + "字"; saveLast(); }
     doneCount++; transcribeYen += data.yen || 0;
+    if (recStats) { recStats.audioSec += data.audioSec || 0; recStats.sttSec += data.sec || 0; recStats.segs++; }
     if (data.usage) renderUsage(data.usage);
     recInfo();
   }
@@ -539,6 +546,7 @@ $("retryBtn").onclick = () => { queue = failed.concat(queue); failed = []; $("re
 function maybeSummarize() {
   if (summarizeWhenDone && lastStopped && !recording && !sending && !queue.length && !failed.length) {
     summarizeWhenDone = false; $("run").disabled = false;
+    if (recStats && stopAt) { recStats.afterStop = (Date.now() - stopAt) / 1000; stopAt = 0; }
     if (input.value.trim()) run(); else setStatus("会話が聞き取れませんでした", true);
   }
 }
@@ -547,7 +555,7 @@ $("run").onclick = run;
 function clearAll() {
   putHistory(); curId = null; // 消す前に履歴へ(まとめる前の内容も残す)
   input.value = ""; $("result").hidden = true; setStatus(""); $("count").textContent = "0字"; store.del("last");
-  doneCount = 0; transcribeYen = 0; summaryRuns = []; runsText = ""; lastMeta = null; failed = []; $("retryBtn").hidden = true; recInfo();
+  doneCount = 0; transcribeYen = 0; summaryRuns = []; runsText = ""; lastMeta = null; recStats = null; failed = []; $("retryBtn").hidden = true; recInfo();
 }
 // 共用のiPadで前の患者さんの内容が残らないよう、触らずに一定時間たったら自動で消す。録音中・まとめ中は消さない
 function autoClear() {
@@ -625,7 +633,7 @@ function openHistory(h) {
   clearAll();
   setMode(h.mode === "conversation" ? "conversation" : "dictation");
   input.value = h.input || ""; $("count").textContent = input.value.length + "字";
-  curId = h.id; runsText = input.value.trim(); summaryRuns = (h.meta && h.meta.runs) || []; transcribeYen = (h.meta && h.meta.stt) || 0;
+  curId = h.id; runsText = input.value.trim(); summaryRuns = (h.meta && h.meta.runs) || []; transcribeYen = (h.meta && h.meta.stt) || 0; recStats = h.rec || null;
   if (h.sections) showResult(h.sections, h.meta);
   saveLast();
   $("history").close(); toast("履歴から出しました");
@@ -643,6 +651,33 @@ $("histList").onclick = (e) => {
     if (id === curId) { curId = null; saveLast(); }
     renderHistory();
   }
+};
+// 履歴をCSVに(あとで分析するため。話した内容とまとめも入るので、外に公開しない・この端末かMacの中だけで扱う)
+function historyCsv(list) {
+  const cell = (v) => (v == null ? "" : /[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const n1 = (v) => (v == null ? "" : Number(v).toFixed(1));
+  const jst = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+  const head = ["日時", "端末", "使い方", "まとめのAI", "話した字数", "録音(秒)", "文字起こしの区切り数", "文字起こしの処理(秒・合計)", "止めてから文字になるまで(秒)",
+    "まとめの待ち(秒・アプリで計測)", "まとめの処理(秒・サーバー)", "まとめの字数", "まとめた回数", "文字起こし(円)", "まとめ(円・全回)", "合計(円)", "確認欄の件数", "推測した言葉(黄色)",
+    "話した内容", "S", "O", "A", "P", "確認"];
+  const rows = [head.join(",")];
+  for (const h of [...list].reverse()) {
+    const m = h.meta || {}, r = h.rec || {}, sec = h.sections;
+    const plain = sec ? KEYS.map(histPlain(h)) : ["", "", "", ""];
+    const guesses = sec ? KEYS.flatMap((k) => (sec[k] || "").match(/〘[^〘〙]*〙/g) || []).map((g) => g.slice(1, -1)).join("・") : "";
+    const checks = sec ? (sec.確認 || "").split("\n").filter((l) => l.trim()).length : "";
+    const sumYen = m.runs ? m.runs.reduce((a, b) => a + b, 0) : m.yen;
+    rows.push([jst(h.at), h.device, MODE_NAME[h.mode] || "", m.model || "", (h.input || "").length, r.audioSec != null ? Math.round(r.audioSec) : "", r.segs ?? "", n1(r.sttSec), n1(r.afterStop),
+      n1(m.wait), n1(m.sec), sec ? plain.join("").length : "", m.runs ? m.runs.length : "", m.stt ? n1(m.stt) : "", n1(sumYen), sec || m.stt ? n1((m.stt || 0) + (sumYen || 0)) : "", checks, guesses,
+      h.input, ...plain, sec ? sec.確認 : ""].map(cell).join(","));
+  }
+  return "\ufeff" + rows.join("\r\n");
+}
+$("exportHistory").onclick = async () => {
+  if (curId) putHistory();
+  const list = loadHistory();
+  if (!list.length) { toast("まだ履歴がありません"); return; }
+  await saveCsv(historyCsv(list), "履歴");
 };
 $("clearHistory").onclick = () => {
   if (!confirm("この端末の履歴を全部消します。よろしいですか?")) return;
@@ -707,7 +742,11 @@ $("exportCsv").onclick = async () => {
   let csv;
   try { csv = await usageApi("csv"); } catch (e) { toast("書き出せませんでした:" + e.message); return; }
   if (!csv) { toast("まだ記録がありません"); return; }
-  const d = new Date(), name = `音声カルテ_使った記録_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}.csv`;
+  await saveCsv(csv, "使った記録");
+};
+const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+async function saveCsv(csv, what) {
+  const name = `音声カルテ_${what}_${ymd(new Date())}.csv`;
   const file = new File([csv], name, { type: "text/csv" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); } catch { /* 閉じただけ */ }
@@ -716,7 +755,7 @@ $("exportCsv").onclick = async () => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-};
+}
 $("resetUsage").onclick = async () => {
   // 押し間違いで消えないよう2回聞く
   if (!confirm("使った金額の合計を0に戻します。すべての端末で0になります。よろしいですか?")) return;
@@ -729,7 +768,7 @@ const last = store.get("last");
 if (last && !last.t) { last.t = Date.now(); store.set("last", last); } // 時刻のない古い保存は、今から数える
 if (last) {
   input.value = last.input || ""; $("count").textContent = input.value.length + "字";
-  summaryRuns = last.runs || []; runsText = last.runsText || ""; transcribeYen = last.stt || 0; curId = last.hid || null;
+  summaryRuns = last.runs || []; runsText = last.runsText || ""; transcribeYen = last.stt || 0; recStats = last.rec || null; curId = last.hid || null;
   if (last.sections) showResult(last.sections, last.meta);
 }
 autoClear(); // 時間がたっていたら、戻した内容を履歴に入れてから消す(同じ処理の中なので画面には出ない)
