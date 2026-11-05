@@ -69,6 +69,15 @@
   details.month .cost { font-size:14px; }
   details.month h5 { margin:10px 0 2px; font-size:13px; color:var(--ink); }
   #exportCsv { width:100%; margin-top:10px; }
+  /* 節約モード(まとめのAIを Sonnet に)の小さなスイッチ。ふだんはオフ */
+  .ailine { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:8px 2px 0; font-size:12px; color:var(--sub); }
+  .aiswitch { appearance:none; -webkit-appearance:none; width:40px; height:22px; min-height:0; margin:0; padding:0; border-radius:11px; background:var(--line); position:relative; cursor:pointer; flex:none; transition:background .15s; border:none; }
+  .aiswitch::after { content:""; position:absolute; left:2px; top:2px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.3); transition:left .15s; }
+  .aiswitch:checked { background:#1e88ff; }
+  .aiswitch:checked::after { left:20px; }
+  .ailine.on #aiLbl { color:#1e88ff; font-weight:700; font-size:14px; }
+  .ailine.on #aiNote { color:var(--ng); }
+  #run.eco::after { content:"💰節約"; display:inline-block; background:#fff; color:#0b6bcb; font-size:12px; font-weight:700; border-radius:8px; padding:2px 7px; margin-left:6px; vertical-align:2px; }
   .hist-day { margin:14px 0 4px; font-size:14px; color:var(--sub); font-weight:700; }
   .hist-item { border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin:6px 0; }
   .hist-item.cur { border-color:var(--acc); }
@@ -112,6 +121,7 @@
 
   <textarea id="input" placeholder="ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。&#10;例:右下6番、3日前から冷たいものがしみる。打診マイナス…"></textarea>
   <div class="hint"><span id="inputHint">聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
+  <label class="ailine" id="aiLine"><span id="aiLbl">節約モード(Sonnet・約半額)</span><input type="checkbox" class="aiswitch" id="aiSave" role="switch"><span id="aiNote"></span></label>
 
   <div class="row-btns">
     <button class="main" id="run">SOAPにまとめる</button>
@@ -146,6 +156,8 @@
   <input id="api" type="url" placeholder="ふつうは空欄のまま">
   <label for="autoClear">触らずに時間がたったら、話した内容とまとめを自動で消す</label>
   <select id="autoClear"><option value="0">消さない</option><option value="5">5分</option><option value="10">10分</option><option value="30">30分</option><option value="60">60分</option></select>
+  <label for="aiModel">まとめのAI(①②とも)</label>
+  <select id="aiModel"><option value="opus">Opus(精度重視・②1回 約1.3円)</option><option value="sonnet">Sonnet(節約・②1回 約0.7円)</option></select>
   <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
   <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option></select>
   <label for="device">この端末の名前(使った記録に残します。例:院長iPhone・共用iPad)</label>
@@ -357,7 +369,7 @@ async function run() {
     const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/soap", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Passphrase": settings.pass || "", "X-Device": encodeURIComponent(settings.device || "") },
-      body: JSON.stringify({ mode, text }),
+      body: JSON.stringify({ mode, text, model: settings.model || "opus" }),
     });
     const data = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
     if (!res.ok || data.error) throw new Error(data.error || `エラー(${res.status})`);
@@ -561,9 +573,27 @@ $("shareAll").onclick = async () => {
   try { await navigator.share({ text: allText() }); touchLast(); } catch { /* 閉じただけ */ }
 };
 
-$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("settings").showModal(); loadUsage(); };
+$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("settings").showModal(); loadUsage(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, keepDays: Number($("keepDays").value) }; store.set("settings", settings); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value }; store.set("settings", settings); renderAiPick(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
+
+// ---- 節約モード(まとめのAIの切り替え。⚙設定の「まとめのAI」と同じ値。この端末に覚える) ----
+// ふだんはオフ(Opus)。オンにすると Sonnet で約半額。テストで長い会話の歯の番号を1回取り違えたので、オンの間は注意を出す
+const AI_NOTE = { opus: "オフ=Opus(精度重視)", sonnet: "歯の番号をよく確認してください" };
+function renderAiPick() {
+  const m = settings.model || "opus", eco = m === "sonnet";
+  $("aiSave").checked = eco;
+  $("aiNote").textContent = AI_NOTE[m];
+  $("aiLbl").textContent = eco ? "節約モード オン" : "節約モード(Sonnet・約半額)";
+  $("aiLine").classList.toggle("on", eco);
+  $("run").classList.toggle("eco", eco);
+}
+$("aiSave").onchange = () => {
+  settings = { ...settings, model: $("aiSave").checked ? "sonnet" : "opus" };
+  store.set("settings", settings);
+  renderAiPick();
+};
+renderAiPick();
 
 // ---- 履歴の画面 ----
 const MODE_NAME = { conversation: "①会話", dictation: "②口述" };
