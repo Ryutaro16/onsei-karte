@@ -720,18 +720,19 @@ function renderStats(st) {
   if (!st || !st.months.length) { box.textContent = "まだ記録がありません"; return; }
   box.innerHTML = st.months.map((m, i) => {
     const [y, mo] = m.key.split("-");
-    let h = `<div><span>①会話 ${m.conv}回・②口述 ${m.dict}回</span><span></span></div>` +
-      `<div><span>まとめ(Claude)</span><span>${yenText(m.claudeYen)}</span></div>` +
+    let h = `<div><span>①会話 ${m.conv}回・②口述 ${m.dict}回${m.perio ? `・ペリオ ${m.perio}枚` : ""}</span><span></span></div>` +
+      `<div><span>まとめ(Claude)</span><span>${yenText(m.claudeYen - (m.perioYen || 0))}</span></div>` +
+      (m.perio ? `<div><span>ペリオチャートの紙の読み取り(Claude)</span><span>${yenText(m.perioYen)}</span></div>` : "") +
       `<div><span>文字起こし(OpenAI)${minText(m.audioSec)}</span><span>${yenText(m.openaiYen)}</span></div>`;
     if (m.beforeYen) h += `<div><span>記録を始める前の分(10/29〜)</span><span>${yenText(m.beforeYen)}</span></div>`;
     h += `<div class="sum"><span>合計</span><span>${yenText(m.yen)}</span></div>`;
     if (m.waitAvg != null) h += `<div><span>まとめの待ち時間(平均)</span><span>${m.waitAvg.toFixed(1)}秒</span></div>`;
     const devs = st.devices.filter((d) => d.month === m.key);
-    if (devs.length) h += `<h5>端末ごと</h5>` + devs.map((d) => `<div><span>${esc(d.device || "名前なし")} ①${d.conv}・②${d.dict}回</span><span>${yenText(d.yen)}</span></div>`).join("");
+    if (devs.length) h += `<h5>端末ごと</h5>` + devs.map((d) => `<div><span>${esc(d.device || "名前なし")} ${d.perio && !d.conv && !d.dict ? `紙の読み取り${d.perio}枚` : `①${d.conv}・②${d.dict}回`}</span><span>${yenText(d.yen)}</span></div>`).join("");
     const days = st.days.filter((d) => d.key.startsWith(m.key));
     h += `<h5>日ごと</h5>` + days.map((d) => {
       const dt = new Date(d.key + "T00:00:00");
-      return `<div><span>${dt.getMonth() + 1}/${dt.getDate()}(${WD[dt.getDay()]}) ①${d.conv}・②${d.dict}回${d.beforeYen ? "＋記録前の分" : ""}</span><span>${yenText(d.yen)}</span></div>`;
+      return `<div><span>${dt.getMonth() + 1}/${dt.getDate()}(${WD[dt.getDay()]}) ①${d.conv}・②${d.dict}回${d.perio ? `・ペリオ${d.perio}枚` : ""}${d.beforeYen ? "＋記録前の分" : ""}</span><span>${yenText(d.yen)}</span></div>`;
     }).join("");
     return `<details class="month"${i ? "" : " open"}><summary><span>${y}年${Number(mo)}月</span><span>${yenText(m.yen)}</span></summary><div class="cost">${h}</div></details>`;
   }).join("");
