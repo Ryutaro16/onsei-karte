@@ -305,6 +305,9 @@ if (settings.autoClear == null) settings.autoClear = 0;
 // 2026-11-04 初期値を10分→消さないに。前の初期値のままの端末は一度だけ「消さない」に直す(⚙設定で保存した後は acSet で触らない)
 else if (settings.autoClear === 10 && !settings.acSet) { settings.autoClear = 0; settings.acSet = 1; store.set("settings", settings); }
 if (settings.keepDays == null) settings.keepDays = 7; // まとめの履歴を残す日数(0=残さない、1=その日だけ、-1=ずっと)
+// 2026-11-14 まとめのAIの初期値を Opus → Sonnet に(歯の番号は さわって直す・話した言葉との照らし合わせ で補う)。
+// 全部の端末で一度だけ Sonnet にする。その後に⚙設定やスイッチで選んだもの(mSet)は触らない
+if (!settings.mSet) { settings.model = "sonnet"; settings.mSet = 1; store.set("settings", settings); }
 
 // 「S:」「O:」「A:」「P:」と、貼らない「確認:」の見出しで分ける
 function parseSoap(text) {
@@ -953,7 +956,7 @@ for (const d of document.querySelectorAll("dialog")) {
 
 $("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("settings").showModal(); loadUsage(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value }; store.set("settings", settings); renderAiPick(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value }; store.set("settings", settings); renderAiPick(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
 
 // ---- 節約モード(まとめのAIの切り替え。⚙設定の「まとめのAI」と同じ値。この端末に覚える) ----
 // ふだんはオフ(Opus)。オンにすると Sonnet で約半額。テストで長い会話の歯の番号を1回取り違えたので、オンの間は注意を出す
