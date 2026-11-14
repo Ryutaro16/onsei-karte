@@ -118,6 +118,12 @@
   .tp-row { display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; margin:8px 0 4px; }
   .styleline { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:8px 2px 0; font-size:12px; color:var(--sub); }
   .styleline .seg button { min-height:30px; font-size:13px; padding:2px 9px; }
+  .rate { margin:14px 0 0; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; font-size:13px; color:var(--sub); }
+  .rate .row { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .rate button { min-height:34px; padding:3px 10px; font-size:14px; border-radius:17px; background:none; color:var(--ink); border:1px solid var(--line); }
+  .rate button.on { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
+  .rate .why button { font-size:13px; min-height:30px; }
+  .rate textarea { width:100%; min-height:40px; height:44px; margin-top:6px; font-size:15px; box-sizing:border-box; }
   .cmp { margin:0 0 10px; font-size:13px; color:var(--sub); }
   .cmp .seg { margin-right:8px; vertical-align:middle; }
   .cmp .link { padding:4px 0; font-size:14px; color:var(--acc); text-decoration:underline; }
@@ -186,6 +192,12 @@
     <div class="row-btns">
       <button class="main" id="copyAll">全部コピー</button>
       <button id="shareAll">iPadへ送る</button>
+    </div>
+    <div class="rate" id="rateBox" hidden>
+      <b>このまとめの評価</b>(あとで要約を良くするために使います。押さなくても使えます)
+      <div class="row" id="rateScore"><button data-v="◎">◎ そのまま</button><button data-v="○">○ 少し直した</button><button data-v="△">△ かなり直した</button><button data-v="×">× 使えない</button></div>
+      <div class="row why" id="rateWhy"><button>歯の番号</button><button>用語の行き過ぎ</button><button>聞き間違いの直し</button><button>抜け</button><button>余計な付け足し</button><button>長すぎ</button><button>短すぎ</button><button>欄の分け方</button><button>言い回し</button></div>
+      <textarea id="rateMemo" placeholder="気づいたこと(🎤で話してOK)"></textarea>
     </div>
     <div class="hint"><span>貼る前に必ず内容を確認してください。欄の中は直接直せます。歯の番号(点線)はさわると選んで直せます。</span></div>
   </section>
@@ -364,6 +376,7 @@ function showResult(sections, meta) {
   showChecks();
   checkTeeth();
   renderCmp();
+  renderRate();
 }
 
 // 費用の表示。meta = { stt:文字起こしの円, model, yen:今回のまとめの円, sec, runs:[同じ内容でまとめた各回の円] }
@@ -484,7 +497,7 @@ function evLog(kind, item) { if (evCase) { evCase[kind].push({ at: Date.now(), k
 // 履歴から開いた・再読み込みのときは、その1人分の記録を続ける
 function evOpen(id) {
   evCase = null;
-  if (id && !settings.evOff) EV.get(id).then((c) => { if (c && !evCase) evCase = c; }).catch(() => {});
+  if (id && !settings.evOff) EV.get(id).then((c) => { if (c && !evCase) { evCase = c; renderRate(); } }).catch(() => {});
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") evSave(true); });
 addEventListener("pagehide", () => evSave(true));
@@ -516,6 +529,35 @@ $("cmpBox").onclick = (e) => {
   saveLast();
   toast(`${KEY_NAME[k]}のまとめを表示しています`);
 };
+
+// ---- まとめの評価(2026-11-14)。表示中のAIの最後の回に付けて、詳しい記録とCSVに残す ----
+// rating = { at, score:◎○△×, why:[理由], memo }
+function rateRun() {
+  if (!evCase || !shownKey) return null;
+  for (let i = evCase.runs.length - 1; i >= 0; i--) if (evCase.runs[i].key === shownKey) return evCase.runs[i];
+  return null;
+}
+function renderRate() {
+  const u = rateRun(), box = $("rateBox");
+  box.hidden = !u || $("result").hidden;
+  if (box.hidden) return;
+  const r = u.rating || {};
+  document.querySelectorAll("#rateScore button").forEach((b) => b.classList.toggle("on", b.dataset.v === r.score));
+  document.querySelectorAll("#rateWhy button").forEach((b) => b.classList.toggle("on", (r.why || []).includes(b.textContent)));
+  if (document.activeElement !== $("rateMemo")) $("rateMemo").value = r.memo || "";
+}
+function setRate(fn) {
+  const u = rateRun(); if (!u) return;
+  u.rating = { score: "", why: [], memo: "", ...(u.rating || {}) };
+  fn(u.rating); u.rating.at = Date.now();
+  evSave(); renderRate();
+}
+$("rateScore").onclick = (e) => { const b = e.target.closest("button"); if (b) setRate((r) => { r.score = r.score === b.dataset.v ? "" : b.dataset.v; }); };
+$("rateWhy").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  setRate((r) => { const w = b.textContent; r.why = r.why.includes(w) ? r.why.filter((x) => x !== w) : [...r.why, w]; });
+};
+$("rateMemo").addEventListener("input", () => setRate((r) => { r.memo = $("rateMemo").value; }));
 
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.classList.add("show");
@@ -1279,7 +1321,7 @@ async function evalCsv() {
   const head = ["記録ID", "始めた日時", "端末", "使い方", "この1人分のAI", "文字起こしの区切り数", "録音(秒)", "文字起こしの処理(秒)", "止めてから文字になるまで(秒)", "文字起こし(円)",
     "回", "まとめた日時", "きっかけ", "まとめのAI", "まとめ方", "実際に答えたモデル", "指示文の版", "送った字数", "送った文を手で直したか", "入力トークン", "とっておいた指示文(書き込み)", "とっておいた指示文(読み出し)", "出力トークン(考えた分を含む)",
     "まとめの待ち(秒・アプリ)", "まとめの処理(秒・サーバー)", "まとめ(円)", "止まった理由", "まとめの字数", "確認欄の件数", "推測した言葉(黄色)", "まとめの歯の番号", "話した歯の番号", "話した言葉にない歯の番号(オレンジ)",
-    "最終版か", "先生が直した欄", "歯の番号を直した", "コピー・送った回数",
+    "最終版か", "先生が直した欄", "歯の番号を直した", "コピー・送った回数", "評価", "評価の理由", "評価のメモ",
     "文字起こしそのまま", "AIへ送った文", "AIのS", "AIのO", "AIのA", "AIのP", "AIの確認", "最終のS", "最終のO", "最終のA", "最終のP", "AIの答えそのまま"];
   const rows = [head.join(",")];
   for (const c of cases) {
@@ -1293,7 +1335,7 @@ async function evalCsv() {
     // その回のまとめが出ていた間(同じAIの次の回まで)の操作
     const within = (list, i) => { const u = runs[i], next = runs.slice(i + 1).find((x) => x.key === u.key); return list.filter((e) => e.key === u.key && e.at >= u.at && (!next || e.at < next.at)); };
     if (!runs.length) {
-      rows.push([...caseCols, ...Array(27).fill(""), sttText, f.input || "", ...Array(10).fill("")].map(cell).join(","));
+      rows.push([...caseCols, ...Array(30).fill(""), sttText, f.input || "", ...Array(10).fill("")].map(cell).join(","));
       continue;
     }
     runs.forEach((u, i) => {
@@ -1311,7 +1353,7 @@ async function evalCsv() {
         stt.length ? (norm(u.input) === norm(sttText) ? "いいえ" : "はい") : "",
         t.in ?? "", t.cacheW ?? "", t.cacheR ?? "", t.out ?? "", n1(u.wait), n1(u.sec), n2(u.yen), u.stop || "",
         KEYS.map((k) => plain(ai[k])).join("").length, checks.length, guesses.join("・"), teeth.join(" "), [...spoken.keys()].join(" "), odd.join(" "),
-        shown ? "はい(画面に出ていた方)" : fs ? "はい(見比べたもう一方)" : "いいえ", fs ? KEYS.filter((k) => norm(fs[k]) !== norm(ai[k])).join("・") || "なし" : "", fixed.join("・"), within(copies, i).length,
+        shown ? "はい(画面に出ていた方)" : fs ? "はい(見比べたもう一方)" : "いいえ", fs ? KEYS.filter((k) => norm(fs[k]) !== norm(ai[k])).join("・") || "なし" : "", fixed.join("・"), within(copies, i).length, (u.rating || {}).score || "", ((u.rating || {}).why || []).join("・"), (u.rating || {}).memo || "",
         sttText, u.input || "", ...KEYS.map((k) => plain(ai[k])), plain(ai.確認), ...(fs ? KEYS.map((k) => plain(fs[k])) : ["", "", "", ""]), u.raw || ""].map(cell).join(","));
     });
   }
