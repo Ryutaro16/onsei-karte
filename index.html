@@ -116,6 +116,9 @@
   .tp-opts button.said { border:2px solid #e8590c; }
   .tp-opts button.said small { color:#e8590c; font-weight:700; }
   .tp-row { display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; margin:8px 0 4px; }
+  .cmp { margin:0 0 10px; font-size:13px; color:var(--sub); }
+  .cmp .seg { margin-right:8px; vertical-align:middle; }
+  .cmp .link { padding:4px 0; font-size:14px; color:var(--acc); text-decoration:underline; }
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
   .seg button { border:0; border-radius:0; min-height:34px; padding:4px 10px; font-size:14px; background:none; color:var(--sub); }
   .seg button.on { background:var(--acc); color:var(--acc-ink); font-weight:700; }
@@ -167,6 +170,7 @@
   <div id="status" role="status"></div>
 
   <section id="result" hidden>
+    <div class="cmp" id="cmpBox" hidden></div>
     <div class="notice" id="checks" hidden></div>
     <div class="notice tooth-warn" id="toothWarn" hidden></div>
     <div class="soap" id="soap">
@@ -200,8 +204,15 @@
   <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option><option value="-1">ずっと(いっぱいになったら古い順に消える)</option></select>
   <label for="device">この端末の名前(使った記録に残します。例:院長iPhone・共用iPad)</label>
   <input id="device" type="text" maxlength="30" placeholder="名前なし">
+  <label class="ailine" style="font-size:15px;margin-top:12px;color:inherit"><input type="checkbox" class="aiswitch" id="evOn" role="switch"><span>評価・分析用の詳しい記録を残す</span></label>
   <p class="muted">この端末の中だけに保存します。</p>
   <div class="row-btns"><button class="main" id="saveSettings">保存</button><button id="closeSettings">閉じる</button></div>
+  <div class="usage-box">
+    <b>評価・分析用の詳しい記録(この端末の中)</b>
+    <p class="muted" id="evInfo"></p>
+    <button id="exportEval" style="width:100%;margin-top:6px">詳しい記録をCSVで書き出す(評価・分析用)</button>
+    <p class="muted">まとめるたびに1行:文字起こしそのもの・AIへ送った文・SonnetとOpusそれぞれのまとめ・先生が直した後の文・トークン数・時間・金額。履歴の設定とは別にいつも残します。中身はサーバーに送りません。CSVは外に公開しないでください。<button class="link" id="clearEval">詳しい記録を全部消す</button></p>
+  </div>
   <div class="usage-box">
     <b>使った金額(すべての端末の合計)</b>
     <div id="usageDetail" class="cost"></div>
@@ -345,6 +356,7 @@ function showResult(sections, meta) {
   renderMeta(lastMeta);
   showChecks();
   checkTeeth();
+  renderCmp();
 }
 
 // 費用の表示。meta = { stt:文字起こしの円, model, yen:今回のまとめの円, sec, runs:[同じ内容でまとめた各回の円] }
@@ -371,7 +383,10 @@ function renderMeta(m) {
 const curSections = () => ($("result").hidden ? null : { ...Object.fromEntries(KEYS.map((k) => [k, getMarked(k)])), 確認: checkItems.join("\n") });
 let histTimer = null;
 function saveLast() {
-  store.set("last", { input: input.value, sections: curSections(), meta: lastMeta, runs: summaryRuns, runsText, stt: transcribeYen, rec: recStats, hid: curId, t: Date.now() });
+  const sections = curSections();
+  if (sections && shownKey && views[shownKey]) views[shownKey].sections = sections; // 比べる用:表示中のAIのまとめに、直した分を残す
+  store.set("last", { input: input.value, sections, meta: lastMeta, runs: summaryRuns, runsText, stt: transcribeYen, rec: recStats, hid: curId, views, shown: shownKey, ev: evCase && evCase.id, t: Date.now() });
+  evFinal();
   // 履歴に入っている1件を直したら、履歴の方も直す(打つたびに書かないよう少し待つ)
   if (curId) { clearTimeout(histTimer); histTimer = setTimeout(putHistory, 1000); }
 }
@@ -403,10 +418,97 @@ function putHistory() {
   const sections = curSections();
   if (!input.value.trim() && !sections) return;
   const list = loadHistory(), old = curId && list.find((h) => h.id === curId);
-  if (old) Object.assign(old, { input: input.value, sections, meta: lastMeta, rec: recStats, device: settings.device || "" });
-  else { curId = Date.now().toString(36); list.unshift({ id: curId, at: Date.now(), mode, input: input.value, sections, meta: lastMeta, rec: recStats, device: settings.device || "" }); }
+  const more = { views: Object.keys(views).length > 1 ? views : undefined, shown: shownKey, ev: evCase ? evCase.id : undefined };
+  if (old) Object.assign(old, { input: input.value, sections, meta: lastMeta, rec: recStats, device: settings.device || "" }, more, { ev: more.ev || old.ev });
+  else { curId = Date.now().toString(36); list.unshift({ id: curId, at: Date.now(), mode, input: input.value, sections, meta: lastMeta, rec: recStats, device: settings.device || "", ...more }); }
   saveHistory(list);
 }
+
+// ---- 評価・分析用の詳しい記録(2026-11-14)。この端末の中(IndexedDB)だけで、サーバーには送らない。履歴の設定とは別にいつも残す(⚙設定で止められる) ----
+// 1件 = 1人分(「消す」・履歴から開く・新しい録音の前で区切る)
+// { id, at, device, mode, stt:[文字起こしの区切りごと {at,text,audioSec,sec,yen}], rec:録音の数字,
+//   runs:[まとめた回ごと {at,key:opus/sonnet,label,actual:実際に答えたモデル,trigger:きっかけ,input:AIへ送った文,raw:AIの答えそのまま,yen,sec,wait,tokens,promptVer,stop}],
+//   edits:[歯の番号を直した {at,kind,from,to,n,key}], copies:[{at,what,key}], final:{at,input,shown:表示中のAI,sections:先生が直した後のまとめ} }
+const EV = {
+  p: null,
+  open() {
+    if (!this.p) this.p = new Promise((ok, ng) => {
+      const r = indexedDB.open("onsei-karte", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("cases", { keyPath: "id" });
+      r.onsuccess = () => ok(r.result); r.onerror = () => { this.p = null; ng(r.error); };
+    });
+    return this.p;
+  },
+  async tx(rw, fn) {
+    const db = await this.open();
+    return new Promise((ok, ng) => { const t = db.transaction("cases", rw), r = fn(t.objectStore("cases")); t.oncomplete = () => ok(r && r.result); t.onerror = () => ng(t.error); t.onabort = () => ng(t.error); });
+  },
+  put(c) { return this.tx("readwrite", (s) => s.put(c)); },
+  get(id) { return this.tx("readonly", (s) => s.get(id)); },
+  all() { return this.tx("readonly", (s) => s.getAll()); },
+  count() { return this.tx("readonly", (s) => s.count()); },
+  clear() { return this.tx("readwrite", (s) => s.clear()); },
+};
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {} // 端末が勝手に消さないよう頼む
+let evCase = null, evTimer = null;
+// 今の1人分(なければ作る)。記録を止めているときは null
+function evNow() {
+  if (settings.evOff) return null;
+  if (!evCase) evCase = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(), device: settings.device || "", mode, stt: [], runs: [], edits: [], copies: [] };
+  return evCase;
+}
+function evSave(now) {
+  clearTimeout(evTimer);
+  if (!evCase) return Promise.resolve();
+  const c = evCase, go = () => EV.put(c).catch(() => {});
+  if (now) return go();
+  evTimer = setTimeout(go, 800);
+  return Promise.resolve();
+}
+// 画面の今の内容(先生が直した後)を「最終」として残す
+function evFinal() {
+  if (!evCase) return;
+  // views = 見比べたときの、AIごとの直した後のまとめ
+  evCase.final = { at: Date.now(), input: input.value, shown: shownKey, sections: curSections(), views: Object.fromEntries(Object.entries(views).map(([k, v]) => [k, v.sections])) };
+  evCase.rec = recStats;
+  evSave();
+}
+function evLog(kind, item) { if (evCase) { evCase[kind].push({ at: Date.now(), key: shownKey, ...item }); evSave(); } }
+// 履歴から開いた・再読み込みのときは、その1人分の記録を続ける
+function evOpen(id) {
+  evCase = null;
+  if (id && !settings.evOff) EV.get(id).then((c) => { if (c && !evCase) evCase = c; }).catch(() => {});
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") evSave(true); });
+addEventListener("pagehide", () => evSave(true));
+
+// ---- 比べる用:同じ話した内容を、もう一方のAIでもまとめて見比べる(押したときだけ) ----
+const KEY_NAME = { opus: "Opus", sonnet: "Sonnet" };
+let views = {}, shownKey = null; // views[opus/sonnet] = { sections, meta }。shownKey = 表示中のAI
+const keyOfMeta = (m) => (m && /Opus/.test(m.model || "") ? "opus" : "sonnet");
+function renderCmp() {
+  const box = $("cmpBox");
+  if ($("result").hidden || !shownKey || !input.value.trim()) { box.hidden = true; return; }
+  const other = shownKey === "opus" ? "sonnet" : "opus";
+  if (views[other]) {
+    box.innerHTML = `<span class="seg">${["sonnet", "opus"].map((k) => `<button data-cmp="${k}" class="${k === shownKey ? "on" : ""}">${KEY_NAME[k]}</button>`).join("")}</span>見比べ中(コピー・iPadへ送るは表示中の方)`;
+  } else {
+    const est = mode === "conversation" ? (other === "opus" ? "7" : "4") : (other === "opus" ? "1.3" : "0.7");
+    box.innerHTML = `<button class="link" data-cmprun="${other}">${KEY_NAME[other]}でもまとめて比べる(約${est}円)</button>`;
+  }
+  box.hidden = false;
+}
+$("cmpBox").onclick = (e) => {
+  const r = e.target.closest("[data-cmprun]");
+  if (r) { run(r.dataset.cmprun, "比べる用"); return; }
+  const b = e.target.closest("[data-cmp]"), k = b && b.dataset.cmp;
+  if (!k || k === shownKey || !views[k]) return;
+  views[shownKey].sections = curSections();
+  shownKey = k;
+  showResult(views[k].sections, views[k].meta);
+  saveLast();
+  toast(`${KEY_NAME[k]}のまとめを表示しています`);
+};
 
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.classList.add("show");
@@ -434,6 +536,7 @@ async function copy(text, label) {
   }
   toast(ok ? `${label}をコピーしました` : "コピーできませんでした。欄を長押ししてコピーしてください");
   touchLast();
+  if (ok) evLog("copies", { what: label });
 }
 // 最後に触った時刻だけ新しくする(コピーも「触った」に数える)
 function touchLast() { const l = store.get("last"); if (l) { l.t = Date.now(); store.set("last", l); } }
@@ -442,35 +545,45 @@ function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.cla
 
 let busy = false;
 let summaryRuns = [], runsText = "";
-async function run() {
+// key = まとめのAI(opus/sonnet。省略=⚙設定の値)、trigger = きっかけ(詳しい記録に残す)
+async function run(key, trigger = "ふつう") {
+  key = key || settings.model || "opus";
   if (recording || sending || queue.length || !lastStopped) { setStatus("文字起こしが終わるまでお待ちください", true); return; }
   const text = input.value.trim();
   if (!text) { setStatus("話した内容がありません", true); return; }
   if (busy) return;
-  busy = true; $("run").disabled = true;
+  busy = true; $("run").disabled = true; $("cmpBox").hidden = true;
   const t0 = Date.now();
   const tick = setInterval(() => setStatus(`まとめています… ${Math.round((Date.now() - t0) / 1000)}秒`), 500);
   try {
     const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/soap", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Passphrase": settings.pass || "", "X-Device": encodeURIComponent(settings.device || "") },
-      body: JSON.stringify({ mode, text, model: settings.model || "opus" }),
+      body: JSON.stringify({ mode, text, model: key }),
     });
     const data = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
     if (!res.ok || data.error) throw new Error(data.error || `エラー(${res.status})`);
     // 同じ内容で「もう一度まとめる」を押した分は足していく。内容が変わったら数え直す
     if (data.usage) renderUsage(data.usage);
-    if (runsText !== text) { summaryRuns = []; runsText = text; }
+    if (shownKey && views[shownKey] && !$("result").hidden) views[shownKey].sections = curSections(); // 前に出ていたまとめの直した分を残す
+    if (runsText !== text) { summaryRuns = []; runsText = text; views = {}; }
     summaryRuns.push(data.yen);
-    const model = "Claude " + String(data.label).replace(/\s*\(.*\)\s*$/, "");
-    showResult(parseSoap(data.text), { stt: transcribeYen, model, yen: data.yen, sec: data.sec, wait: (Date.now() - t0) / 1000, runs: summaryRuns.slice() });
+    const model = "Claude " + String(data.label).replace(/\s*\(.*\)\s*$/, ""), wait = (Date.now() - t0) / 1000;
+    const meta = { stt: transcribeYen, model, yen: data.yen, sec: data.sec, wait, runs: summaryRuns.slice() }, sections = parseSoap(data.text);
+    views[key] = { sections, meta }; shownKey = key;
+    const c = evNow();
+    if (c) {
+      c.mode = mode;
+      c.runs.push({ at: Date.now(), key, label: data.label || "", actual: data.actual || "", trigger, input: text, raw: data.text, yen: data.yen, sec: data.sec, wait, tokens: data.tokens || null, promptVer: data.promptVer || "", stop: data.stop || "" });
+    }
+    showResult(sections, meta);
     putHistory();
     setStatus("できました。内容を確認してからコピーしてください");
     saveLast();
   } catch (e) {
     setStatus(e.message === "Failed to fetch" ? "サーバーにつながりません。通信状態と設定を確認してください" : e.message, true);
   } finally {
-    clearInterval(tick); busy = false; $("run").disabled = false;
+    clearInterval(tick); busy = false; $("run").disabled = false; renderCmp();
   }
 }
 
@@ -609,6 +722,7 @@ async function sendQueue() {
     }
     queue.shift();
     if (!data) { failed.push(blob, ...queue); queue = []; $("retryBtn").hidden = false; $("run").disabled = false; setStatus("文字起こしに失敗しました:" + err, true); break; }
+    { const c = evNow(); if (c) { c.mode = mode; c.stt.push({ at: Date.now(), text: data.text || "", audioSec: data.audioSec || 0, sec: data.sec || 0, yen: data.yen || 0 }); evSave(); } }
     if (data.text) { input.value += (input.value && !input.value.endsWith("\n") ? "\n" : "") + data.text; $("count").textContent = input.value.length + "字"; saveLast(); }
     doneCount++; transcribeYen += data.yen || 0;
     if (recStats) { recStats.audioSec += data.audioSec || 0; recStats.sttSec += data.sec || 0; recStats.segs++; }
@@ -624,13 +738,14 @@ function maybeSummarize() {
   if (summarizeWhenDone && lastStopped && !recording && !sending && !queue.length && !failed.length) {
     summarizeWhenDone = false; $("run").disabled = false;
     if (recStats && stopAt) { recStats.afterStop = (Date.now() - stopAt) / 1000; stopAt = 0; }
-    if (input.value.trim()) run(); else setStatus("会話が聞き取れませんでした", true);
+    if (input.value.trim()) run(undefined, "録音後に自動"); else setStatus("会話が聞き取れませんでした", true);
   }
 }
 
-$("run").onclick = run;
+$("run").onclick = () => run();
 function clearAll() {
   putHistory(); curId = null; // 消す前に履歴へ(まとめる前の内容も残す)
+  evFinal(); evSave(true); evCase = null; views = {}; shownKey = null; $("cmpBox").hidden = true; // 詳しい記録はここで1人分を区切る
   input.value = ""; $("result").hidden = true; setStatus(""); $("count").textContent = "0字"; store.del("last");
   doneCount = 0; transcribeYen = 0; summaryRuns = []; runsText = ""; lastMeta = null; recStats = null; failed = []; $("retryBtn").hidden = true; recInfo();
 }
@@ -758,6 +873,7 @@ function replaceTooth(from, to, only) {
   if (!changed.length) return;
   for (const k of new Set(changed.map((c) => c[0]))) setBox(k, getMarked(k));
   for (const [k, i] of changed) { const s = boxes[k].querySelectorAll(".tooth")[i]; if (s) s.classList.add("flash"); }
+  evLog("edits", { kind: "tooth", from, to, n: changed.length });
   checkTeeth();
   saveLast();
   toast(`${to} に直しました${changed.length > 1 ? `(${changed.length}か所)` : ""}`);
@@ -871,7 +987,7 @@ $("shareAll").onclick = async () => {
       if (!r.taken) break;
     }
     if (r.taken) throw new Error("混み合っています。もう一度押してください");
-    touchLast();
+    touchLast(); evLog("copies", { what: "iPadへ送る" });
     $("relayCode").textContent = code.slice(0, 3) + " " + code.slice(3);
     $("relayState").textContent = "iPadで受け取るのを待っています";
     const exp = Date.now() + (r.exp - Date.now() > 0 ? r.exp - Date.now() : 300000);
@@ -954,9 +1070,10 @@ for (const d of document.querySelectorAll("dialog")) {
   d.addEventListener("close", () => { d.style.transition = "none"; reset(); });
 }
 
-$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("settings").showModal(); loadUsage(); };
+$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("evOn").checked = !settings.evOff; $("settings").showModal(); loadUsage(); evInfo(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value }; store.set("settings", settings); renderAiPick(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value, evOff: !$("evOn").checked };
+  if (settings.evOff) evCase = null; store.set("settings", settings); renderAiPick(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
 
 // ---- 節約モード(まとめのAIの切り替え。⚙設定の「まとめのAI」と同じ値。この端末に覚える) ----
 // ふだんはオフ(Opus)。オンにすると Sonnet で約半額。テストで長い会話の歯の番号を1回取り違えたので、オンの間は注意を出す
@@ -1003,6 +1120,9 @@ function openHistory(h, msg = "履歴から出しました") {
   setMode(h.mode === "conversation" ? "conversation" : "dictation");
   input.value = h.input || ""; $("count").textContent = input.value.length + "字";
   curId = h.id; runsText = input.value.trim(); summaryRuns = (h.meta && h.meta.runs) || []; transcribeYen = (h.meta && h.meta.stt) || 0; recStats = h.rec || null;
+  views = h.views || {}; shownKey = h.sections ? h.shown || keyOfMeta(h.meta) : null;
+  if (h.sections && !views[shownKey]) views[shownKey] = { sections: h.sections, meta: h.meta };
+  evOpen(h.ev);
   if (h.sections) showResult(h.sections, h.meta);
   saveLast();
   $("history").close(); toast(msg);
@@ -1126,6 +1246,76 @@ async function saveCsv(csv, what) {
   a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+// 詳しい記録をCSVに。まとめた回ごとに1行(同じ1人分は同じ記録ID)。まとめる前に消したものも1行
+async function evalCsv() {
+  const cases = (await EV.all()).sort((a, b) => a.at - b.at);
+  if (!cases.length) return "";
+  const cell = (v) => (v == null ? "" : /[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const n1 = (v) => (v == null || v === "" ? "" : Number(v).toFixed(1)), n2 = (v) => (v == null || v === "" ? "" : Number(v).toFixed(2));
+  const p2 = (n) => String(n).padStart(2, "0");
+  const jst = (t) => { if (!t) return ""; const d = new Date(t); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`; };
+  const plain = (v) => String(v || "").replace(/[〘〙]/g, "").trim();
+  const norm = (v) => plain(v).replace(/\s+/g, " ");
+  const sum = (a, f) => a.reduce((x, y) => x + (Number(y[f]) || 0), 0);
+  const head = ["記録ID", "始めた日時", "端末", "使い方", "この1人分のAI", "文字起こしの区切り数", "録音(秒)", "文字起こしの処理(秒)", "止めてから文字になるまで(秒)", "文字起こし(円)",
+    "回", "まとめた日時", "きっかけ", "まとめのAI", "実際に答えたモデル", "指示文の版", "送った字数", "送った文を手で直したか", "入力トークン", "とっておいた指示文(書き込み)", "とっておいた指示文(読み出し)", "出力トークン(考えた分を含む)",
+    "まとめの待ち(秒・アプリ)", "まとめの処理(秒・サーバー)", "まとめ(円)", "止まった理由", "まとめの字数", "確認欄の件数", "推測した言葉(黄色)", "まとめの歯の番号", "話した歯の番号", "話した言葉にない歯の番号(オレンジ)",
+    "最終版か", "先生が直した欄", "歯の番号を直した", "コピー・送った回数",
+    "文字起こしそのまま", "AIへ送った文", "AIのS", "AIのO", "AIのA", "AIのP", "AIの確認", "最終のS", "最終のO", "最終のA", "最終のP", "AIの答えそのまま"];
+  const rows = [head.join(",")];
+  for (const c of cases) {
+    const stt = c.stt || [], runs = c.runs || [], f = c.final || {}, r = c.rec || {}, edits = c.edits || [], copies = c.copies || [];
+    const sttText = stt.map((x) => x.text).filter(Boolean).join("\n");
+    const caseCols = [c.id, jst(c.at), c.device, MODE_NAME[c.mode] || "", [...new Set(runs.map((u) => KEY_NAME[u.key] || u.key))].join("・"),
+      stt.length || "", stt.length ? Math.round(sum(stt, "audioSec")) : "", stt.length ? n1(sum(stt, "sec")) : "", n1(r.afterStop), stt.length ? n2(sum(stt, "yen")) : ""];
+    // AIごとの最後の回が「最終」。画面に出ていた方は f.sections、見比べたもう一方は f.views の、先生が直した後のまとめ
+    const lastOf = {};
+    runs.forEach((u, i) => { lastOf[u.key] = i; });
+    // その回のまとめが出ていた間(同じAIの次の回まで)の操作
+    const within = (list, i) => { const u = runs[i], next = runs.slice(i + 1).find((x) => x.key === u.key); return list.filter((e) => e.key === u.key && e.at >= u.at && (!next || e.at < next.at)); };
+    if (!runs.length) {
+      rows.push([...caseCols, ...Array(26).fill(""), sttText, f.input || "", ...Array(10).fill("")].map(cell).join(","));
+      continue;
+    }
+    runs.forEach((u, i) => {
+      const ai = parseSoap(u.raw || ""), t = u.tokens || {};
+      for (const k of KEYS) if (!ai[k]) ai[k] = "記載なし";
+      const guesses = KEYS.flatMap((k) => ai[k].match(/〘[^〘〙]*〙/g) || []).map((g) => g.slice(1, -1));
+      const checks = ai.確認.split("\n").map((l) => l.replace(/^\s*[・\-]\s*/, "").trim()).filter((l) => l && l !== "なし");
+      const teeth = [...new Set(KEYS.flatMap((k) => ai[k].match(TOOTH_RE) || []))];
+      const spoken = spokenTeeth(u.input || "");
+      const odd = spoken.size ? teeth.filter((x) => toothSingles(x).some((y) => !spoken.has(y))) : [];
+      const isLast = lastOf[u.key] === i, shown = isLast && u.key === f.shown && f.sections;
+      const fs = !isLast ? null : shown ? f.sections : (f.views && f.views[u.key]) || null;
+      const fixed = within(edits, i).map((e) => `${e.from}→${e.to}${e.n > 1 ? `(${e.n}か所)` : ""}`);
+      rows.push([...caseCols, i + 1, jst(u.at), u.trigger || "", KEY_NAME[u.key] || u.key, u.actual || "", u.promptVer || "", (u.input || "").length,
+        stt.length ? (norm(u.input) === norm(sttText) ? "いいえ" : "はい") : "",
+        t.in ?? "", t.cacheW ?? "", t.cacheR ?? "", t.out ?? "", n1(u.wait), n1(u.sec), n2(u.yen), u.stop || "",
+        KEYS.map((k) => plain(ai[k])).join("").length, checks.length, guesses.join("・"), teeth.join(" "), [...spoken.keys()].join(" "), odd.join(" "),
+        shown ? "はい(画面に出ていた方)" : fs ? "はい(見比べたもう一方)" : "いいえ", fs ? KEYS.filter((k) => norm(fs[k]) !== norm(ai[k])).join("・") || "なし" : "", fixed.join("・"), within(copies, i).length,
+        sttText, u.input || "", ...KEYS.map((k) => plain(ai[k])), plain(ai.確認), ...(fs ? KEYS.map((k) => plain(fs[k])) : ["", "", "", ""]), u.raw || ""].map(cell).join(","));
+    });
+  }
+  return "\ufeff" + rows.join("\r\n");
+}
+function evInfo() {
+  const el = $("evInfo");
+  if (settings.evOff) { el.textContent = "今は記録していません。"; return; }
+  EV.count().then((n) => { el.textContent = `この端末に ${n}人分 の記録があります。`; }).catch(() => { el.textContent = "この端末では記録を保存できません(プライベートブラウズなど)。"; });
+}
+$("exportEval").onclick = async () => {
+  try {
+    evFinal(); await evSave(true);
+    const csv = await evalCsv();
+    if (!csv) { toast("まだ記録がありません"); return; }
+    await saveCsv(csv, "詳しい記録");
+  } catch (e) { toast("書き出せませんでした:" + e.message); }
+};
+$("clearEval").onclick = async () => {
+  if (!confirm("この端末の詳しい記録を全部消します。よろしいですか?(履歴と使った金額は消えません)")) return;
+  if (!confirm("本当に全部消しますか?(元に戻せません。先にCSVで書き出すと残せます)")) return;
+  try { clearTimeout(evTimer); await EV.clear(); evCase = null; evInfo(); toast("詳しい記録を消しました"); } catch (e) { toast("消せませんでした:" + e.message); }
+};
 $("resetUsage").onclick = async () => {
   // 押し間違いで消えないよう2回聞く
   if (!confirm("使った金額の合計を0に戻します。すべての端末で0になります。よろしいですか?")) return;
@@ -1139,6 +1329,9 @@ if (last && !last.t) { last.t = Date.now(); store.set("last", last); } // 時刻
 if (last) {
   input.value = last.input || ""; $("count").textContent = input.value.length + "字";
   summaryRuns = last.runs || []; runsText = last.runsText || ""; transcribeYen = last.stt || 0; recStats = last.rec || null; curId = last.hid || null;
+  views = last.views || {}; shownKey = last.sections ? last.shown || keyOfMeta(last.meta) : null;
+  if (last.sections && !views[shownKey]) views[shownKey] = { sections: last.sections, meta: last.meta };
+  evOpen(last.ev);
   if (last.sections) showResult(last.sections, last.meta);
 }
 autoClear(); // 時間がたっていたら、戻した内容を履歴に入れてから消す(同じ処理の中なので画面には出ない)
