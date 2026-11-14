@@ -116,6 +116,8 @@
   .tp-opts button.said { border:2px solid #e8590c; }
   .tp-opts button.said small { color:#e8590c; font-weight:700; }
   .tp-row { display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; margin:8px 0 4px; }
+  .styleline { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:8px 2px 0; font-size:12px; color:var(--sub); }
+  .styleline .seg button { min-height:30px; font-size:13px; padding:2px 9px; }
   .cmp { margin:0 0 10px; font-size:13px; color:var(--sub); }
   .cmp .seg { margin-right:8px; vertical-align:middle; }
   .cmp .link { padding:4px 0; font-size:14px; color:var(--acc); text-decoration:underline; }
@@ -161,6 +163,7 @@
 
   <textarea id="input" placeholder="ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。&#10;例:右下6番、3日前から冷たいものがしみる。打診マイナス…"></textarea>
   <div class="hint"><span id="inputHint">聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
+  <div class="styleline"><span>まとめ方</span><span class="seg" id="stylePick"><button data-v="plain">言い換えない</button><button data-v="terms">用語だけ</button><button data-v="full">病名まで</button></span><span id="styleNote"></span></div>
   <label class="ailine" id="aiLine"><span id="aiLbl">節約モード(Sonnet・約半額)</span><input type="checkbox" class="aiswitch" id="aiSave" role="switch"><span id="aiNote"></span></label>
 
   <div class="row-btns">
@@ -200,6 +203,8 @@
   <select id="autoClear"><option value="0">消さない</option><option value="5">5分</option><option value="10">10分</option><option value="30">30分</option><option value="60">60分</option></select>
   <label for="aiModel">まとめのAI(①②とも)</label>
   <select id="aiModel"><option value="opus">Opus(精度重視・②1回 約1.3円)</option><option value="sonnet">Sonnet(節約・②1回 約0.7円)</option></select>
+  <label for="aiStyle">まとめ方(患者さん向けのやさしい言い方を、どこまで歯科用語にするか)</label>
+  <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
   <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
   <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option><option value="-1">ずっと(いっぱいになったら古い順に消える)</option></select>
   <label for="device">この端末の名前(使った記録に残します。例:院長iPhone・共用iPad)</label>
@@ -318,6 +323,8 @@ else if (settings.autoClear === 10 && !settings.acSet) { settings.autoClear = 0;
 if (settings.keepDays == null) settings.keepDays = 7; // まとめの履歴を残す日数(0=残さない、1=その日だけ、-1=ずっと)
 // 2026-11-14 まとめのAIの初期値を Opus → Sonnet に(歯の番号は さわって直す・話した言葉との照らし合わせ で補う)。
 // 全部の端末で一度だけ Sonnet にする。その後に⚙設定やスイッチで選んだもの(mSet)は触らない
+// 2026-11-14 まとめ方(plain=言い換えない / terms=用語だけ / full=病名まで)。初期値は「用語だけ」
+if (!["plain", "terms", "full"].includes(settings.style)) { settings.style = "terms"; store.set("settings", settings); }
 if (!settings.mSet) { settings.model = "sonnet"; settings.mSet = 1; store.set("settings", settings); }
 
 // 「S:」「O:」「A:」「P:」と、貼らない「確認:」の見出しで分ける
@@ -369,7 +376,7 @@ function renderMeta(m) {
   const yen = (v) => `約${v.toFixed(1)}円`;
   const rows = [];
   if (m.stt) rows.push(["文字起こし(OpenAI)", yen(m.stt)]);
-  rows.push([`まとめ(${m.model})`, `${yen(m.yen)}・${m.sec.toFixed(1)}秒`]);
+  rows.push([`まとめ(${m.model}${m.style ? "・" + STYLE_NAME[m.style] : ""})`, `${yen(m.yen)}・${m.sec.toFixed(1)}秒`]);
   let html = rows.map(([k, v]) => `<div><span>${esc(k)}</span><span>${v}</span></div>`).join("");
   html += `<div class="sum"><span>合計</span><span>${yen((m.stt || 0) + m.yen)}</span></div>`;
   if (m.runs && m.runs.length > 1) {
@@ -544,7 +551,7 @@ function touchLast() { const l = store.get("last"); if (l) { l.t = Date.now(); s
 function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
 
 let busy = false;
-let summaryRuns = [], runsText = "";
+let summaryRuns = [], runsText = "", runsStyle = "";
 // key = まとめのAI(opus/sonnet。省略=⚙設定の値)、trigger = きっかけ(詳しい記録に残す)
 async function run(key, trigger = "ふつう") {
   key = key || settings.model || "opus";
@@ -559,22 +566,22 @@ async function run(key, trigger = "ふつう") {
     const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/soap", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Passphrase": settings.pass || "", "X-Device": encodeURIComponent(settings.device || "") },
-      body: JSON.stringify({ mode, text, model: key }),
+      body: JSON.stringify({ mode, text, model: key, style: settings.style }),
     });
     const data = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
     if (!res.ok || data.error) throw new Error(data.error || `エラー(${res.status})`);
     // 同じ内容で「もう一度まとめる」を押した分は足していく。内容が変わったら数え直す
     if (data.usage) renderUsage(data.usage);
     if (shownKey && views[shownKey] && !$("result").hidden) views[shownKey].sections = curSections(); // 前に出ていたまとめの直した分を残す
-    if (runsText !== text) { summaryRuns = []; runsText = text; views = {}; }
+    if (runsText !== text || runsStyle !== settings.style) { summaryRuns = []; runsText = text; runsStyle = settings.style; views = {}; } // 話した内容かまとめ方が変わったら見比べは数え直し
     summaryRuns.push(data.yen);
     const model = "Claude " + String(data.label).replace(/\s*\(.*\)\s*$/, ""), wait = (Date.now() - t0) / 1000;
-    const meta = { stt: transcribeYen, model, yen: data.yen, sec: data.sec, wait, runs: summaryRuns.slice() }, sections = parseSoap(data.text);
+    const meta = { stt: transcribeYen, model, style: settings.style, yen: data.yen, sec: data.sec, wait, runs: summaryRuns.slice() }, sections = parseSoap(data.text);
     views[key] = { sections, meta }; shownKey = key;
     const c = evNow();
     if (c) {
       c.mode = mode;
-      c.runs.push({ at: Date.now(), key, label: data.label || "", actual: data.actual || "", trigger, input: text, raw: data.text, yen: data.yen, sec: data.sec, wait, tokens: data.tokens || null, promptVer: data.promptVer || "", stop: data.stop || "" });
+      c.runs.push({ at: Date.now(), key, label: data.label || "", actual: data.actual || "", trigger, style: data.style || settings.style, input: text, raw: data.text, yen: data.yen, sec: data.sec, wait, tokens: data.tokens || null, promptVer: data.promptVer || "", stop: data.stop || "" });
     }
     showResult(sections, meta);
     putHistory();
@@ -1070,10 +1077,10 @@ for (const d of document.querySelectorAll("dialog")) {
   d.addEventListener("close", () => { d.style.transition = "none"; reset(); });
 }
 
-$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("evOn").checked = !settings.evOff; $("settings").showModal(); loadUsage(); evInfo(); };
+$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("evOn").checked = !settings.evOff; $("aiStyle").value = settings.style; $("settings").showModal(); loadUsage(); evInfo(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value, evOff: !$("evOn").checked };
-  if (settings.evOff) evCase = null; store.set("settings", settings); renderAiPick(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value, evOff: !$("evOn").checked, style: $("aiStyle").value };
+  if (settings.evOff) evCase = null; store.set("settings", settings); renderAiPick(); renderStyle(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
 
 // ---- 節約モード(まとめのAIの切り替え。⚙設定の「まとめのAI」と同じ値。この端末に覚える) ----
 // ふだんはオフ(Opus)。オンにすると Sonnet で約半額。テストで長い会話の歯の番号を1回取り違えたので、オンの間は注意を出す
@@ -1092,6 +1099,18 @@ $("aiSave").onchange = () => {
   renderAiPick();
 };
 renderAiPick();
+// まとめ方の切り替え(画面と⚙設定で同じ値)
+const STYLE_NAME = { plain: "言い換えない", terms: "用語だけ", full: "病名まで" };
+const STYLE_NOTE = { plain: "話した言葉のまま", terms: "病名は付けません", full: "病名は黄色を確認" };
+function renderStyle() {
+  document.querySelectorAll("#stylePick button").forEach((b) => b.classList.toggle("on", b.dataset.v === settings.style));
+  $("styleNote").textContent = STYLE_NOTE[settings.style] || "";
+}
+$("stylePick").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  settings = { ...settings, style: b.dataset.v }; store.set("settings", settings); renderStyle();
+};
+renderStyle();
 
 // ---- 履歴の画面 ----
 const MODE_NAME = { conversation: "①会話", dictation: "②口述" };
@@ -1258,7 +1277,7 @@ async function evalCsv() {
   const norm = (v) => plain(v).replace(/\s+/g, " ");
   const sum = (a, f) => a.reduce((x, y) => x + (Number(y[f]) || 0), 0);
   const head = ["記録ID", "始めた日時", "端末", "使い方", "この1人分のAI", "文字起こしの区切り数", "録音(秒)", "文字起こしの処理(秒)", "止めてから文字になるまで(秒)", "文字起こし(円)",
-    "回", "まとめた日時", "きっかけ", "まとめのAI", "実際に答えたモデル", "指示文の版", "送った字数", "送った文を手で直したか", "入力トークン", "とっておいた指示文(書き込み)", "とっておいた指示文(読み出し)", "出力トークン(考えた分を含む)",
+    "回", "まとめた日時", "きっかけ", "まとめのAI", "まとめ方", "実際に答えたモデル", "指示文の版", "送った字数", "送った文を手で直したか", "入力トークン", "とっておいた指示文(書き込み)", "とっておいた指示文(読み出し)", "出力トークン(考えた分を含む)",
     "まとめの待ち(秒・アプリ)", "まとめの処理(秒・サーバー)", "まとめ(円)", "止まった理由", "まとめの字数", "確認欄の件数", "推測した言葉(黄色)", "まとめの歯の番号", "話した歯の番号", "話した言葉にない歯の番号(オレンジ)",
     "最終版か", "先生が直した欄", "歯の番号を直した", "コピー・送った回数",
     "文字起こしそのまま", "AIへ送った文", "AIのS", "AIのO", "AIのA", "AIのP", "AIの確認", "最終のS", "最終のO", "最終のA", "最終のP", "AIの答えそのまま"];
@@ -1274,7 +1293,7 @@ async function evalCsv() {
     // その回のまとめが出ていた間(同じAIの次の回まで)の操作
     const within = (list, i) => { const u = runs[i], next = runs.slice(i + 1).find((x) => x.key === u.key); return list.filter((e) => e.key === u.key && e.at >= u.at && (!next || e.at < next.at)); };
     if (!runs.length) {
-      rows.push([...caseCols, ...Array(26).fill(""), sttText, f.input || "", ...Array(10).fill("")].map(cell).join(","));
+      rows.push([...caseCols, ...Array(27).fill(""), sttText, f.input || "", ...Array(10).fill("")].map(cell).join(","));
       continue;
     }
     runs.forEach((u, i) => {
@@ -1288,7 +1307,7 @@ async function evalCsv() {
       const isLast = lastOf[u.key] === i, shown = isLast && u.key === f.shown && f.sections;
       const fs = !isLast ? null : shown ? f.sections : (f.views && f.views[u.key]) || null;
       const fixed = within(edits, i).map((e) => `${e.from}→${e.to}${e.n > 1 ? `(${e.n}か所)` : ""}`);
-      rows.push([...caseCols, i + 1, jst(u.at), u.trigger || "", KEY_NAME[u.key] || u.key, u.actual || "", u.promptVer || "", (u.input || "").length,
+      rows.push([...caseCols, i + 1, jst(u.at), u.trigger || "", KEY_NAME[u.key] || u.key, STYLE_NAME[u.style] || "", u.actual || "", u.promptVer || "", (u.input || "").length,
         stt.length ? (norm(u.input) === norm(sttText) ? "いいえ" : "はい") : "",
         t.in ?? "", t.cacheW ?? "", t.cacheR ?? "", t.out ?? "", n1(u.wait), n1(u.sec), n2(u.yen), u.stop || "",
         KEYS.map((k) => plain(ai[k])).join("").length, checks.length, guesses.join("・"), teeth.join(" "), [...spoken.keys()].join(" "), odd.join(" "),
