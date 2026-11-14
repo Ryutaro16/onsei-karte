@@ -1310,7 +1310,10 @@ async function saveCsv(csv, what) {
 // 詳しい記録をCSVに。まとめた回ごとに1行(同じ1人分は同じ記録ID)。まとめる前に消したものも1行
 async function evalCsv() {
   const cases = (await EV.all()).sort((a, b) => a.at - b.at);
-  if (!cases.length) return "";
+  // 詳しい記録を始める前の分(まとめの履歴)も入れる。記録していなかった列は空欄
+  const linked = new Set(cases.map((c) => c.id));
+  const olds = loadHistory().filter((h) => !h.recv && !(h.ev && linked.has(h.ev))).sort((a, b) => a.at - b.at);
+  if (!cases.length && !olds.length) return "";
   const cell = (v) => (v == null ? "" : /[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
   const n1 = (v) => (v == null || v === "" ? "" : Number(v).toFixed(1)), n2 = (v) => (v == null || v === "" ? "" : Number(v).toFixed(2));
   const p2 = (n) => String(n).padStart(2, "0");
@@ -1356,6 +1359,24 @@ async function evalCsv() {
         shown ? "はい(画面に出ていた方)" : fs ? "はい(見比べたもう一方)" : "いいえ", fs ? KEYS.filter((k) => norm(fs[k]) !== norm(ai[k])).join("・") || "なし" : "", fixed.join("・"), within(copies, i).length, (u.rating || {}).score || "", ((u.rating || {}).why || []).join("・"), (u.rating || {}).memo || "",
         sttText, u.input || "", ...KEYS.map((k) => plain(ai[k])), plain(ai.確認), ...(fs ? KEYS.map((k) => plain(fs[k])) : ["", "", "", ""]), u.raw || ""].map(cell).join(","));
     });
+  }
+  // 履歴の分:見出しの名前で入れる(ない値は空欄)
+  for (const h of olds) {
+    const m = h.meta || {}, r = h.rec || {}, sec = h.sections, v = {};
+    v["記録ID"] = "履歴:" + h.id; v["始めた日時"] = jst(h.at); v["端末"] = h.device || ""; v["使い方"] = MODE_NAME[h.mode] || "";
+    v["この1人分のAI"] = m.model ? m.model.replace(/^Claude\s*/, "").replace(/\s*[\d.]+$/, "") : "";
+    if (r.segs) { v["文字起こしの区切り数"] = r.segs; v["録音(秒)"] = Math.round(r.audioSec || 0); v["文字起こしの処理(秒)"] = n1(r.sttSec); v["止めてから文字になるまで(秒)"] = n1(r.afterStop); }
+    if (m.stt) v["文字起こし(円)"] = n2(m.stt);
+    v["きっかけ"] = "履歴から(詳しい記録の前)"; v["まとめのAI"] = v["この1人分のAI"]; v["まとめ方"] = STYLE_NAME[m.style] || "";
+    v["送った字数"] = (h.input || "").length; v["まとめの待ち(秒・アプリ)"] = n1(m.wait); v["まとめの処理(秒・サーバー)"] = n1(m.sec); v["まとめ(円)"] = n2(m.yen);
+    if (sec) {
+      const fin = KEYS.map((k) => plain(sec[k]));
+      v["まとめの字数"] = fin.join("").length; v["確認欄の件数"] = (sec.確認 || "").split("\n").filter((l) => l.trim() && l.trim() !== "なし").length;
+      v["推測した言葉(黄色)"] = KEYS.flatMap((k) => (sec[k] || "").match(/〘[^〘〙]*〙/g) || []).map((g) => g.slice(1, -1)).join("・");
+      v["最終版か"] = "はい(画面に出ていた方)"; KEYS.forEach((k, i) => { v["最終の" + k] = fin[i]; });
+    }
+    v["AIへ送った文"] = h.input || "";
+    rows.push(head.map((k) => v[k] ?? "").map(cell).join(","));
   }
   return "\ufeff" + rows.join("\r\n");
 }
