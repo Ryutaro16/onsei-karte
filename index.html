@@ -153,12 +153,7 @@
     <div><button class="link" id="openRelay">📥受取</button><button class="link" id="openHistory">🕘履歴</button><button class="link" id="openSettings">⚙設定</button></div>
   </header>
 
-  <div class="mode">
-    <button id="modeConv">① 会話を要約<small>押すとすぐ録音</small></button>
-    <button id="modeDict" class="on">② 口述を整える<small>キーボードの🎤で話す</small></button>
-  </div>
-
-  <div id="recBox" class="rec-box" hidden>
+  <div id="recBox" class="rec-box">
     <div class="row-btns">
       <button id="recBtn" class="rec">● 録音を始める</button>
       <button id="cancelRec" hidden>やめる</button>
@@ -214,9 +209,9 @@
   <input id="api" type="url" placeholder="ふつうは空欄のまま">
   <label for="autoClear">触らずに時間がたったら、話した内容とまとめを自動で消す</label>
   <select id="autoClear"><option value="0">消さない</option><option value="5">5分</option><option value="10">10分</option><option value="30">30分</option><option value="60">60分</option></select>
-  <label for="aiModel">まとめのAI(①②とも)</label>
-  <select id="aiModel"><option value="opus">Opus(精度重視・②1回 約1.3円)</option><option value="sonnet">Sonnet(節約・②1回 約0.7円)</option><option value="haiku">Haiku(最安・用語だけ・歯の番号は文字で)</option></select>
-  <label for="sttPick">①会話の文字起こし</label>
+  <label for="aiModel">まとめのAI</label>
+  <select id="aiModel"><option value="opus">Opus(精度重視・10分の会話 約7円)</option><option value="sonnet">Sonnet(節約・10分の会話 約3円)</option><option value="haiku">Haiku(最安・用語だけ・歯の番号は文字で)</option></select>
+  <label for="sttPick">文字起こし</label>
   <select id="sttPick"><option value="openai">OpenAI(ふだん・10分 約6.8円)</option><option value="groq">Groq(節約・10分 約1円・聞き間違いはやや多め)</option></select>
   <label for="aiStyle">まとめ方(患者さん向けのやさしい言い方を、どこまで歯科用語にするか)</label>
   <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
@@ -241,7 +236,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/15c(画面で文字起こしとまとめのAIを選べる)</p>
+    <p class="muted">版 11/15d(録音ボタン1つ・止めた後に待たされる不具合の直し)</p>
   </div>
 </dialog>
 
@@ -601,6 +596,8 @@ let summaryRuns = [], runsText = "", runsStyle = "";
 // key = まとめのAI(opus/sonnet。省略=⚙設定の値)、trigger = きっかけ(詳しい記録に残す)
 async function run(key, trigger = "ふつう") {
   key = key || settings.model || "opus";
+  // 止めてから10秒たっても最後の区切りが届かないときは、押せば待たずにまとめる(遅れて届いた分は入れない)
+  if (!recording && !sending && !queue.length && !lastStopped && finalRec?.waitOver) { finalRec.late = true; lastStopped = true; summarizeWhenDone = false; stopTracks(finalRec.stream); recInfo(); }
   if (recording || sending || queue.length || !lastStopped) { setStatus("文字起こしが終わるまでお待ちください", true); return; }
   const text = input.value.trim();
   if (!text) { setStatus("話した内容がありません", true); return; }
@@ -641,10 +638,11 @@ async function run(key, trigger = "ふつう") {
 }
 
 // ---- 使い方の切り替え(① 会話を要約/② 口述を整える) ----
-let mode = store.get("mode") === "conversation" ? "conversation" : "dictation";
+// 2026-11-15 録音ボタン1つに。いつも会話用の指示文でまとめる(口述10例のテストで会話用でも同じ出来だった)。前の②口述の履歴を開いたときだけ dictation になる
+let mode = "conversation";
 const MODE_TEXT = {
   conversation: {
-    placeholder: "①を押すと、すぐ録音が始まります。会話は1分ごとに文字になり、ここに入ります(直接直せます)。止めると自動でまとめます。",
+    placeholder: "「● 録音を始める」を押すと録音が始まります。1分ごとに文字になり、ここに入ります(直接直せます。手で打ってもかまいません)。止めたら内容を確かめて「SOAPにまとめる」を押してください。",
     hint: "録音中は画面を閉じたり、ほかのアプリに切り替えたりしないでください。",
   },
   dictation: {
@@ -655,10 +653,6 @@ const MODE_TEXT = {
 function setMode(m) {
   if (recording) return;
   mode = m; store.set("mode", m);
-  $("modeConv").classList.toggle("on", m === "conversation");
-  $("modeDict").classList.toggle("on", m === "dictation");
-  $("recBox").hidden = m !== "conversation" && !recording;
-  $("sttLine").hidden = m !== "conversation"; // 文字起こしの選択は①会話のときだけ
   input.placeholder = MODE_TEXT[m].placeholder;
   $("inputHint").textContent = MODE_TEXT[m].hint;
 }
@@ -670,15 +664,6 @@ function beginRecordingFresh() {
   }
   startRecording();
 }
-// ① は押したらすぐ録音
-$("modeConv").onclick = () => { if (recording) return; setMode("conversation"); beginRecordingFresh(); };
-// ② はキーボードを開くだけ(🎤はキーボードで押す。文字起こし代がかからない)
-$("modeDict").onclick = () => {
-  if (recording) return;
-  setMode("dictation");
-  input.focus();
-  input.setSelectionRange(input.value.length, input.value.length);
-};
 
 // ---- 録音(① 会話)。無音でも止まらない。1分ごとに区切って文字起こしに送る ----
 const SEGMENT_MS = 60 * 1000;
@@ -687,6 +672,8 @@ let queue = [], failed = [], sending = false, doneCount = 0, transcribeYen = 0, 
 // 止めるボタンのあと、最後の区切りが届いたか(iPhoneでは停止の知らせが少し遅れて来る)
 let lastStopped = true;
 let stopAt = 0; // 「止めてまとめる」を押した時刻(全部文字になるまでの秒を測る)
+let stopWatch = null, finalRec = null; // 止めたのに最後の区切りが届かないときの見張り(10秒)
+const stopTracks = (st = stream) => { st?.getTracks().forEach((t) => t.stop()); if (st === stream) stream = null; }; // 次の録音のマイクを切らないよう、その録音のものだけ切る
 
 function pickType() {
   for (const t of ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"]) if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
@@ -713,8 +700,11 @@ function startSegment() {
   const parts = [];
   r.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
   r.onstop = () => {
+    // 見張りの時間切れのあとに届いた最後の区切りは、もうまとめに入れない(まとめの後に文が増えないように)
+    if (r.late) return;
     // 止めるボタンで止めたときは、これが最後の区切り(1分ごとの区切りでは recording のまま)
-    if (!recording) lastStopped = true;
+    // マイクは最後の区切りが届いてから切る(先に切ると iPhone で停止の知らせが大きく遅れることがある・2026-11-15 76秒遅れを確認)
+    if (r.final) { lastStopped = true; clearTimeout(stopWatch); stopTracks(r.stream); }
     if (parts.length && !r.discard) { queue.push(new Blob(parts, { type: r.mimeType || type })); sendQueue(); } else { recInfo(); maybeSummarize(); }
   };
   r.start();
@@ -731,7 +721,7 @@ async function startRecording() {
   recording = true; recStart = Date.now(); summarizeWhenDone = false; lastStopped = false;
   recStats = recStats || { audioSec: 0, sttSec: 0, segs: 0, afterStop: null };
   $("recBox").hidden = false; $("cancelRec").hidden = false;
-  $("recBtn").textContent = "■ 止めてまとめる"; $("recBtn").classList.add("on");
+  $("recBtn").textContent = "■ 止める"; $("recBtn").classList.add("on");
   $("run").disabled = true; setStatus("");
   startSegment();
   segTimer = setInterval(() => { recorder.stop(); startSegment(); }, SEGMENT_MS);
@@ -743,17 +733,28 @@ async function startRecording() {
 function stopRecording(summarize = true) {
   clearInterval(segTimer); clearInterval(clock);
   recording = false; summarizeWhenDone = summarize; stopAt = summarize ? Date.now() : 0;
-  if (recorder) { recorder.discard = !summarize; recorder.stop(); } else lastStopped = true;
-  stream?.getTracks().forEach((t) => t.stop());
+  if (recorder && recorder.state !== "inactive") {
+    const r = recorder; r.discard = !summarize; r.final = true; finalRec = r;
+    try { r.requestData(); } catch {}
+    r.stop();
+    clearTimeout(stopWatch);
+    stopWatch = setTimeout(() => {
+      if (lastStopped) return;
+      if (!summarize) { r.late = true; lastStopped = true; stopTracks(r.stream); recInfo(); return; }
+      // 待ち続けるが、「SOAPにまとめる」を押せば待たずにまとめられるようにする
+      r.waitOver = true; $("run").disabled = false;
+      setStatus("最後の数秒の文字起こしを待っています。待たずに進めるときは「SOAPにまとめる」を押してください(最後の数秒は入りません)", true);
+    }, 10000);
+  } else { lastStopped = true; stopTracks(); }
   wakeLock?.release?.(); wakeLock = null;
   $("recBtn").textContent = "● 録音を始める"; $("recBtn").classList.remove("on");
-  $("cancelRec").hidden = true; $("recBox").hidden = mode !== "conversation";
+  $("cancelRec").hidden = true;
   // まとめるときは、最後の区切りまで文字になるまで「まとめる」を押せないようにする
   $("run").disabled = summarize;
   if (!summarize) setStatus("録音をやめました(この録音はまとめていません)");
   recInfo(); maybeSummarize();
 }
-$("recBtn").onclick = () => (recording ? stopRecording() : startRecording());
+$("recBtn").onclick = () => { if (recording) stopRecording(); else { setMode("conversation"); beginRecordingFresh(); } };
 $("cancelRec").onclick = () => stopRecording(false);
 
 // 区切りを順番に送る。失敗したらそこで止めて、順番が入れ替わらないようにする
@@ -787,12 +788,13 @@ async function sendQueue() {
 }
 $("retryBtn").onclick = () => { queue = failed.concat(queue); failed = []; $("retryBtn").hidden = true; setStatus(""); sendQueue(); };
 
-// 録音を止めて、全部の区切りが文字になったら、そのまままとめる
+// 録音を止めて、全部の区切りが文字になったら、「まとめる」を押せるようにする
 function maybeSummarize() {
   if (summarizeWhenDone && lastStopped && !recording && !sending && !queue.length && !failed.length) {
+    // 2026-11-15 自動ではまとめない。文字を確かめて、選び直してから「SOAPにまとめる」を押す
     summarizeWhenDone = false; $("run").disabled = false;
     if (recStats && stopAt) { recStats.afterStop = (Date.now() - stopAt) / 1000; stopAt = 0; }
-    if (input.value.trim()) run(undefined, "録音後に自動"); else setStatus("会話が聞き取れませんでした", true);
+    if (input.value.trim()) setStatus("文字になりました。内容を確かめて「SOAPにまとめる」を押してください"); else setStatus("会話が聞き取れませんでした", true);
   }
 }
 
