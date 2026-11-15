@@ -165,7 +165,7 @@
   <textarea id="input" placeholder="ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。&#10;例:右下6番、3日前から冷たいものがしみる。打診マイナス…"></textarea>
   <div class="hint"><span id="inputHint">聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
   <div class="styleline" id="sttLine"><span>文字起こし</span><span class="seg" id="sttSeg"><button data-v="openai">OpenAI</button><button data-v="groq">Groq 節約</button></span><span id="sttNote"></span></div>
-  <div class="styleline"><span>まとめ方</span><span class="seg" id="stylePick"><button data-v="plain">言い換えない</button><button data-v="terms">用語だけ</button><button data-v="full">病名まで</button></span><span id="styleNote"></span></div>
+  <div class="styleline"><span>まとめ方</span><span class="seg" id="stylePick"><button data-v="plain">言い換えない</button><button data-v="terms">用語だけ</button><button data-v="short">用語・短め</button><button data-v="full">病名まで</button></span><span id="styleNote"></span></div>
   <div class="styleline" id="aiLine"><span>まとめのAI</span><span class="seg" id="aiSeg"><button data-v="opus">Opus</button><button data-v="sonnet">Sonnet</button><button data-v="haiku">Haiku</button></span><span id="aiNote"></span></div>
 
   <div class="row-btns">
@@ -214,7 +214,7 @@
   <label for="sttPick">文字起こし</label>
   <select id="sttPick"><option value="openai">OpenAI(ふだん・10分 約6.8円)</option><option value="groq">Groq(節約・10分 約1円・聞き間違いはやや多め)</option></select>
   <label for="aiStyle">まとめ方(患者さん向けのやさしい言い方を、どこまで歯科用語にするか)</label>
-  <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
+  <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="short">用語・短め(用語だけを短く。確認欄は大事な5件まで)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
   <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
   <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option><option value="-1">ずっと(いっぱいになったら古い順に消える)</option></select>
   <label for="device">この端末の名前(使った記録に残します。例:院長iPhone・共用iPad)</label>
@@ -236,7 +236,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/15d(録音ボタン1つ・止めた後に待たされる不具合の直し)</p>
+    <p class="muted">版 11/15e(まとめ方に「用語・短め」)</p>
   </div>
 </dialog>
 
@@ -335,7 +335,7 @@ if (settings.keepDays == null) settings.keepDays = 7; // まとめの履歴を�
 // 2026-11-14 まとめのAIの初期値を Opus → Sonnet に(歯の番号は さわって直す・話した言葉との照らし合わせ で補う)。
 // 全部の端末で一度だけ Sonnet にする。その後に⚙設定やスイッチで選んだもの(mSet)は触らない
 // 2026-11-14 まとめ方(plain=言い換えない / terms=用語だけ / full=病名まで)。初期値は「用語だけ」
-if (!["plain", "terms", "full"].includes(settings.style)) { settings.style = "terms"; store.set("settings", settings); }
+if (!["plain", "terms", "short", "full"].includes(settings.style)) { settings.style = "terms"; store.set("settings", settings); }
 if (!settings.mSet) { settings.model = "sonnet"; settings.mSet = 1; store.set("settings", settings); }
 
 // 「S:」「O:」「A:」「P:」と、貼らない「確認:」の見出しで分ける
@@ -1157,8 +1157,8 @@ $("sttSeg").onclick = (e) => {
 };
 renderAiPick();
 // まとめ方の切り替え(画面と⚙設定で同じ値)
-const STYLE_NAME = { plain: "言い換えない", terms: "用語だけ", full: "病名まで" };
-const STYLE_NOTE = { plain: "話した言葉のまま", terms: "病名は付けません", full: "病名は黄色を確認" };
+const STYLE_NAME = { plain: "言い換えない", terms: "用語だけ", short: "用語・短め", full: "病名まで" };
+const STYLE_NOTE = { plain: "話した言葉のまま", terms: "病名は付けません", short: "短め・細かい所が抜けることあり", full: "病名は黄色を確認" };
 function renderStyle() {
   const hk = settings.model === "haiku", st = hk ? "terms" : settings.style; // Haiku は用語だけに決まっている
   document.querySelectorAll("#stylePick button").forEach((b) => b.classList.toggle("on", b.dataset.v === st));
