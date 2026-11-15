@@ -84,7 +84,7 @@
   .aiswitch:checked { background:#1e88ff; }
   .aiswitch:checked::after { left:20px; }
   .ailine.on #aiLbl { color:#1e88ff; font-weight:700; font-size:14px; }
-  .ailine.on #aiNote { color:var(--ng); }
+  .ailine.on #aiNote, #aiLine.on #aiNote { color:var(--ng); }
   #run.eco::after { content:"💰節約"; display:inline-block; background:#fff; color:#0b6bcb; font-size:12px; font-weight:700; border-radius:8px; padding:2px 7px; margin-left:6px; vertical-align:2px; }
   .hist-day { margin:14px 0 4px; font-size:14px; color:var(--sub); font-weight:700; }
   .hist-item { border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin:6px 0; }
@@ -169,8 +169,9 @@
 
   <textarea id="input" placeholder="ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。&#10;例:右下6番、3日前から冷たいものがしみる。打診マイナス…"></textarea>
   <div class="hint"><span id="inputHint">聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
+  <div class="styleline" id="sttLine"><span>文字起こし</span><span class="seg" id="sttSeg"><button data-v="openai">OpenAI</button><button data-v="groq">Groq 節約</button></span><span id="sttNote"></span></div>
   <div class="styleline"><span>まとめ方</span><span class="seg" id="stylePick"><button data-v="plain">言い換えない</button><button data-v="terms">用語だけ</button><button data-v="full">病名まで</button></span><span id="styleNote"></span></div>
-  <label class="ailine" id="aiLine"><span id="aiLbl">節約モード(Sonnet・約半額)</span><input type="checkbox" class="aiswitch" id="aiSave" role="switch"><span id="aiNote"></span></label>
+  <div class="styleline" id="aiLine"><span>まとめのAI</span><span class="seg" id="aiSeg"><button data-v="opus">Opus</button><button data-v="sonnet">Sonnet</button><button data-v="haiku">Haiku</button></span><span id="aiNote"></span></div>
 
   <div class="row-btns">
     <button class="main" id="run">SOAPにまとめる</button>
@@ -240,7 +241,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/15b(文字起こしの切り替え OpenAI/Groq を追加)</p>
+    <p class="muted">版 11/15c(画面で文字起こしとまとめのAIを選べる)</p>
   </div>
 </dialog>
 
@@ -657,6 +658,7 @@ function setMode(m) {
   $("modeConv").classList.toggle("on", m === "conversation");
   $("modeDict").classList.toggle("on", m === "dictation");
   $("recBox").hidden = m !== "conversation" && !recording;
+  $("sttLine").hidden = m !== "conversation"; // 文字起こしの選択は①会話のときだけ
   input.placeholder = MODE_TEXT[m].placeholder;
   $("inputHint").textContent = MODE_TEXT[m].hint;
 }
@@ -1127,21 +1129,29 @@ $("closeSettings").onclick = () => $("settings").close();
 $("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value, stt: $("sttPick").value, evOff: !$("evOn").checked, style: $("aiStyle").value };
   if (settings.evOff) evCase = null; store.set("settings", settings); renderAiPick(); renderStyle(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
 
-// ---- 節約モード(まとめのAIの切り替え。⚙設定の「まとめのAI」と同じ値。この端末に覚える) ----
-// ふだんはオフ(Opus)。オンにすると Sonnet で約半額。テストで長い会話の歯の番号を1回取り違えたので、オンの間は注意を出す
-const AI_NOTE = { opus: "オフ=Opus(精度重視)", sonnet: "歯の番号をよく確認してください", haiku: "Haiku・用語だけ・歯の番号は「右下6番」のように文字で。抜けがないか確認してください" };
+// ---- まとめのAI・文字起こしの切り替え(画面と⚙設定で同じ値。この端末に覚える。2026-11-15 節約スイッチから3つの選択に) ----
+// Opus 以外は「💰節約」。Sonnet は長い会話で歯の番号を取り違えたことがあるので注意を出す
+const AI_NOTE = { opus: "精度重視", sonnet: "歯の番号をよく確認してください", haiku: "Haiku・用語だけ・歯の番号は「右下6番」のように文字で。抜けがないか確認してください" };
 function renderAiPick() {
   const m = settings.model || "opus", eco = m !== "opus";
-  $("aiSave").checked = eco;
+  document.querySelectorAll("#aiSeg button").forEach((b) => b.classList.toggle("on", b.dataset.v === m));
   $("aiNote").textContent = AI_NOTE[m];
-  $("aiLbl").textContent = m === "haiku" ? "節約モード オン(Haiku)" : eco ? "節約モード オン" : "節約モード(Sonnet・約半額)";
   $("aiLine").classList.toggle("on", eco);
   $("run").classList.toggle("eco", eco);
+  const st = settings.stt === "groq" ? "groq" : "openai";
+  document.querySelectorAll("#sttSeg button").forEach((b) => b.classList.toggle("on", b.dataset.v === st));
+  $("sttNote").textContent = st === "groq" ? "10分 約1円" : "10分 約6.8円";
 }
-$("aiSave").onchange = () => {
-  settings = { ...settings, model: $("aiSave").checked ? "sonnet" : "opus" };
-  store.set("settings", settings);
+$("aiSeg").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  settings = { ...settings, model: b.dataset.v }; store.set("settings", settings);
   renderAiPick(); renderStyle();
+};
+$("sttSeg").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (recording) { toast("録音中は切り替えられません"); return; }
+  settings = { ...settings, stt: b.dataset.v }; store.set("settings", settings);
+  renderAiPick();
 };
 renderAiPick();
 // まとめ方の切り替え(画面と⚙設定で同じ値)
