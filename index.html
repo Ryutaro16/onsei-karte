@@ -52,7 +52,10 @@
   .relay-left { text-align:center; color:var(--sub); font-size:14px; }
   .relay-state { text-align:center; font-size:16px; margin:10px 0; }
   .relay-state.ok { color:var(--ok, #1f8a5b); font-weight:700; }
-  #relayInput { font-size:32px; letter-spacing:6px; text-align:center; width:100%; padding:8px; font-variant-numeric:tabular-nums; }
+  .relay-item { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; }
+  .relay-item .ri-head { font-weight:700; }
+  .relay-item .ri-text { color:var(--sub); font-size:14px; margin:4px 0 8px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .relay-item button { width:100%; }
   button.rec { flex:2; background:#c0392b; border-color:#c0392b; color:#fff; font-weight:700; }
   button.rec.on { background:#fff; color:#c0392b; animation:blink 1.6s infinite; }
   @keyframes blink { 50% { opacity:.6; } }
@@ -236,7 +239,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/15e(まとめ方に「用語・短め」)</p>
+    <p class="muted">版 11/15f(iPadへ送るを番号なしに)</p>
   </div>
 </dialog>
 
@@ -252,18 +255,16 @@
 <dialog id="relay">
   <b id="relayTitle"></b>
   <div id="relaySend" hidden>
-    <p class="muted">iPadの音声カルテで「📥受取」を押して、この番号を入れてください。</p>
-    <div class="relay-code" id="relayCode"></div>
+    <p class="muted">iPadの音声カルテで「📥受取」を押してください。番号はいりません。</p>
     <div class="relay-left" id="relayLeft"></div>
     <div class="relay-state" id="relayState"></div>
   </div>
   <div id="relayRecv" hidden>
-    <p class="muted">送った端末に出ている6桁の番号を入れてください。</p>
-    <input id="relayInput" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="000000">
+    <p class="muted">5分以内に送られたまとめが出ます。送った時刻と書き出しを確かめて受け取ってください。</p>
+    <div id="relayList"></div>
     <div class="relay-state" id="relayRecvState"></div>
-    <div class="row-btns"><button class="main" id="relayGet">受け取る</button></div>
   </div>
-  <p class="muted">まとめは暗号化して中継サーバーに最大5分だけあずけ、受け取ったらすぐ消します。</p>
+  <p class="muted">まとめは合言葉で暗号化して中継サーバーに最大5分だけあずけ、受け取ったらすぐ消します。合言葉が同じ端末で受け取れます。</p>
   <div class="row-btns"><button id="closeRelay" style="flex:1">閉じる</button></div>
 </dialog>
 
@@ -997,18 +998,25 @@ $("soap").addEventListener("click", (e) => { const t = e.target.closest(".tooth"
 // 欄を手で直し終えたら、歯の番号の印を付け直して確かめ直す
 for (const [k, b] of Object.entries(boxes)) b.addEventListener("blur", () => { if (!$("result").hidden) { setBox(k, getMarked(k)); checkTeeth(); } });
 input.addEventListener("input", () => { if (!$("result").hidden) checkTeeth(); });
-// ---- 別の端末(共用iPad など)へ送る:6桁の番号で受け取る ----
-// 番号から「目印(id)」と「鍵」を端末の中で作り、まとめを暗号化して中継サーバーに最大5分あずける。番号そのものと鍵はサーバーに送らない。
+// ---- 別の端末(共用iPad など)へ送る:番号なし(2026-11-15。前は6桁の番号を入れていた) ----
+// まとめを合言葉から作った鍵で暗号化し、中継サーバーに最大5分あずける。鍵と合言葉そのものは暗号の中に入れない。
+// 受け取る側は届いている分(新しい順)を見て、送った時刻・端末名・書き出しを確かめて選ぶ(何人かが同時に送っても取り違えないように)。
 // AirDrop は Apple ID が違う共用iPadだと毎回「すべての人」にする手間があり、受け取りもうまくいかなかった(2026-11-11)
-const RELAY_SALT = new TextEncoder().encode("onsei-karte-relay");
+const RELAY_SALT = new TextEncoder().encode("onsei-karte-relay-pass");
 const b64 = (u8) => btoa(String.fromCharCode(...u8));
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-async function relayKeys(code) {
-  const enc = new TextEncoder();
-  const id = [...new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode("onsei-karte-relay-id:" + code)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  const base = await crypto.subtle.importKey("raw", enc.encode(code), "PBKDF2", false, ["deriveKey"]);
+let relayKeyCache = null;
+async function relayKey() {
+  const pass = settings.pass || "";
+  if (relayKeyCache?.pass === pass) return relayKeyCache.key;
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode("onsei-karte-relay:" + pass), "PBKDF2", false, ["deriveKey"]);
   const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: RELAY_SALT, iterations: 50000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-  return { id, key };
+  relayKeyCache = { pass, key };
+  return key;
+}
+async function relayOpen(data) {
+  const [iv, ct] = data.split(".").map(unb64);
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, await relayKey(), ct)));
 }
 async function relayApi(body) {
   const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/relay", {
@@ -1030,28 +1038,22 @@ $("shareAll").onclick = async () => {
   const sections = curSections();
   if (!sections) return;
   relayView(true);
-  $("relayCode").textContent = "……"; $("relayLeft").textContent = ""; $("relayState").className = "relay-state"; $("relayState").textContent = "準備中…";
+  $("relayLeft").textContent = ""; $("relayState").className = "relay-state"; $("relayState").textContent = "準備中…";
   try {
-    const payload = new TextEncoder().encode(JSON.stringify({ v: 1, at: Date.now(), mode, sections, meta: lastMeta, device: settings.device || "" }));
-    let code, id, r;
-    for (let i = 0; i < 5; i++) {
-      code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
-      const k = await relayKeys(code); id = k.id;
-      const iv = crypto.getRandomValues(new Uint8Array(12));
-      const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, k.key, payload));
-      r = await relayApi({ action: "put", id, data: b64(iv) + "." + b64(ct) });
-      if (!r.taken) break;
-    }
+    const payload = new TextEncoder().encode(JSON.stringify({ v: 2, at: Date.now(), mode, sections, meta: lastMeta, device: settings.device || "" }));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await relayKey(), payload));
+    const id = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const r = await relayApi({ action: "put", id, data: b64(iv) + "." + b64(ct) });
     if (r.taken) throw new Error("混み合っています。もう一度押してください");
     touchLast(); evLog("copies", { what: "iPadへ送る" });
-    $("relayCode").textContent = code.slice(0, 3) + " " + code.slice(3);
     $("relayState").textContent = "iPadで受け取るのを待っています";
     const exp = Date.now() + (r.exp - Date.now() > 0 ? r.exp - Date.now() : 300000);
     let n = 0;
     const tick = async () => {
       const left = Math.max(0, Math.round((exp - Date.now()) / 1000));
       $("relayLeft").textContent = `あと ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-      if (!left) { stopRelay(); $("relayCode").textContent = "------"; $("relayState").textContent = "時間切れです。もう一度「iPadへ送る」を押してください"; return; }
+      if (!left) { stopRelay(); $("relayState").textContent = "時間切れです。もう一度「iPadへ送る」を押してください"; return; }
       if (++n % 3) return; // 受け取られたかは3秒ごとに確かめる
       try {
         const c = await relayApi({ action: "check", id });
@@ -1060,35 +1062,61 @@ $("shareAll").onclick = async () => {
     };
     relayTimer = setInterval(tick, 1000); tick();
   } catch (e) {
-    $("relayCode").textContent = ""; $("relayState").textContent = "送れませんでした:" + e.message;
+    $("relayState").textContent = "送れませんでした:" + e.message;
   }
 };
-$("openRelay").onclick = () => {
-  relayView(false);
-  $("relayInput").value = ""; $("relayRecvState").textContent = ""; $("relayGet").disabled = false;
-  $("relayInput").focus();
-};
-$("relayGet").onclick = async () => {
-  const code = $("relayInput").value.replace(/\D/g, "");
-  if (code.length !== 6) { $("relayRecvState").textContent = "6桁の番号を入れてください"; return; }
-  if (recording || busy || sending || queue.length || !lastStopped) { $("relayRecvState").textContent = "録音中・まとめ中は受け取れません"; return; }
-  $("relayGet").disabled = true; $("relayRecvState").textContent = "受け取り中…";
+// 受け取る:窓を開いている間は3秒ごとに届いている分を見直す(先に「受取」を開いてから送ってもよい)
+let relayItems = [];
+const hm = (t) => { const d = new Date(t); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
+async function relayRefresh() {
   try {
-    const k = await relayKeys(code);
-    const r = await relayApi({ action: "get", id: k.id });
-    if (!r.data) throw new Error("番号が違うか、5分が過ぎました");
-    const [iv, ct] = r.data.split(".").map(unb64);
-    const p = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, k.key, ct)));
+    const r = await relayApi({ action: "list" });
+    const items = [];
+    for (const it of r.items || []) {
+      try { items.push({ id: it.id, p: await relayOpen(it.data) }); } catch { /* 合言葉が違う・前の6桁の形は読めないので出さない */ }
+    }
+    const key = items.map((x) => x.id).join();
+    if (key === relayItems.map((x) => x.id).join() && $("relayList").childElementCount) return;
+    relayItems = items;
+    $("relayList").innerHTML = "";
+    for (const { id, p } of items) {
+      const sec = p.sections || {};
+      const head = KEYS.map((k) => (sec[k] || "").replace(/〘|〙/g, "").trim()).find((t) => t && t !== "記載なし") || "";
+      const div = document.createElement("div");
+      div.className = "relay-item";
+      div.innerHTML = `<div class="ri-head"></div><div class="ri-text"></div><button class="main">受け取る</button>`;
+      div.querySelector(".ri-head").textContent = `${hm(p.at)} に送られたまとめ${p.device ? "(" + p.device + ")" : ""}`;
+      div.querySelector(".ri-text").textContent = head.slice(0, 80);
+      div.querySelector("button").onclick = (e) => relayTake(id, p, e.target);
+      $("relayList").append(div);
+    }
+    $("relayRecvState").textContent = items.length ? "" : "まだ届いていません。送った端末で「iPadへ送る」を押してください(ここで待っていれば出てきます)";
+  } catch (e) {
+    $("relayRecvState").textContent = "確かめられませんでした:" + e.message;
+  }
+}
+async function relayTake(id, p, btn) {
+  if (recording || busy || sending || queue.length || !lastStopped) { $("relayRecvState").textContent = "録音中・まとめ中は受け取れません"; return; }
+  btn.disabled = true; btn.textContent = "受け取り中…";
+  try {
+    const r = await relayApi({ action: "get", id });
+    if (!r.data) throw new Error("ほかの端末で受け取られたか、5分が過ぎました");
+    stopRelay();
     // 受け取った1件は、この端末の履歴にも入れる(「受け取り」の印つき。履歴のCSVには入れない=送った端末の分と重ならないように)
     const h = { id: Date.now().toString(36), at: Date.now(), mode: p.mode, input: "", sections: p.sections, meta: p.meta, device: p.device || "", recv: 1 };
     if (Number(settings.keepDays)) saveHistory([h, ...loadHistory()]);
     $("relay").close();
     openHistory(h, "受け取りました");
   } catch (e) {
-    $("relayGet").disabled = false; $("relayRecvState").textContent = e.message;
+    btn.disabled = false; btn.textContent = "受け取る"; $("relayRecvState").textContent = e.message;
   }
+}
+$("openRelay").onclick = () => {
+  relayView(false);
+  relayItems = []; $("relayList").innerHTML = ""; $("relayRecvState").textContent = "確かめています…";
+  relayRefresh();
+  relayTimer = setInterval(relayRefresh, 3000);
 };
-$("relayInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("relayGet").click(); });
 $("closeRelay").onclick = () => $("relay").close();
 $("relay").addEventListener("close", stopRelay);
 
