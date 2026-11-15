@@ -239,7 +239,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/15f(iPadへ送るを番号なしに)</p>
+    <p class="muted">版 11/15g(やめるの前に確認)</p>
   </div>
 </dialog>
 
@@ -756,7 +756,8 @@ function stopRecording(summarize = true) {
   recInfo(); maybeSummarize();
 }
 $("recBtn").onclick = () => { if (recording) stopRecording(); else { setMode("conversation"); beginRecordingFresh(); } };
-$("cancelRec").onclick = () => stopRecording(false);
+// 「止める」と並んでいて押し間違えやすいので、確かめてからやめる(それまでの文字は残る)
+$("cancelRec").onclick = () => { if (recording && confirm("録音をやめますか?\nここまでの文字は残りますが、最後の1分ほどは文字にならず、SOAPにもまとめません。")) stopRecording(false); };
 
 // 区切りを順番に送る。失敗したらそこで止めて、順番が入れ替わらないようにする
 async function sendQueue() {
