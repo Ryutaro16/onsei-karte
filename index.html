@@ -214,7 +214,7 @@
   <label for="autoClear">触らずに時間がたったら、話した内容とまとめを自動で消す</label>
   <select id="autoClear"><option value="0">消さない</option><option value="5">5分</option><option value="10">10分</option><option value="30">30分</option><option value="60">60分</option></select>
   <label for="aiModel">まとめのAI(①②とも)</label>
-  <select id="aiModel"><option value="opus">Opus(精度重視・②1回 約1.3円)</option><option value="sonnet">Sonnet(節約・②1回 約0.7円)</option></select>
+  <select id="aiModel"><option value="opus">Opus(精度重視・②1回 約1.3円)</option><option value="sonnet">Sonnet(節約・②1回 約0.7円)</option><option value="haiku">Haiku(最安・用語だけ・歯の番号は文字で)</option></select>
   <label for="aiStyle">まとめ方(患者さん向けのやさしい言い方を、どこまで歯科用語にするか)</label>
   <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
   <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
@@ -238,7 +238,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/14c(前の履歴もCSVに入る版)</p>
+    <p class="muted">版 11/15a(Haiku・歯の番号は文字で を追加)</p>
   </div>
 </dialog>
 
@@ -504,15 +504,15 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 addEventListener("pagehide", () => evSave(true));
 
 // ---- 比べる用:同じ話した内容を、もう一方のAIでもまとめて見比べる(押したときだけ) ----
-const KEY_NAME = { opus: "Opus", sonnet: "Sonnet" };
+const KEY_NAME = { opus: "Opus", sonnet: "Sonnet", haiku: "Haiku(歯は文字)" };
 let views = {}, shownKey = null; // views[opus/sonnet] = { sections, meta }。shownKey = 表示中のAI
-const keyOfMeta = (m) => (m && /Opus/.test(m.model || "") ? "opus" : "sonnet");
+const keyOfMeta = (m) => (m && /Opus/.test(m.model || "") ? "opus" : m && /Haiku/.test(m.model || "") ? "haiku" : "sonnet");
 function renderCmp() {
   const box = $("cmpBox");
   if ($("result").hidden || !shownKey || !input.value.trim()) { box.hidden = true; return; }
   const other = shownKey === "opus" ? "sonnet" : "opus";
   if (views[other]) {
-    box.innerHTML = `<span class="seg">${["sonnet", "opus"].map((k) => `<button data-cmp="${k}" class="${k === shownKey ? "on" : ""}">${KEY_NAME[k]}</button>`).join("")}</span>見比べ中(コピー・iPadへ送るは表示中の方)`;
+    box.innerHTML = `<span class="seg">${["haiku", "sonnet", "opus"].filter((k) => views[k]).map((k) => `<button data-cmp="${k}" class="${k === shownKey ? "on" : ""}">${KEY_NAME[k]}</button>`).join("")}</span>見比べ中(コピー・iPadへ送るは表示中の方)`;
   } else {
     const est = mode === "conversation" ? (other === "opus" ? "7" : "4") : (other === "opus" ? "1.3" : "0.7");
     box.innerHTML = `<button class="link" data-cmprun="${other}">${KEY_NAME[other]}でもまとめて比べる(約${est}円)</button>`;
@@ -619,7 +619,7 @@ async function run(key, trigger = "ふつう") {
     if (runsText !== text || runsStyle !== settings.style) { summaryRuns = []; runsText = text; runsStyle = settings.style; views = {}; } // 話した内容かまとめ方が変わったら見比べは数え直し
     summaryRuns.push(data.yen);
     const model = "Claude " + String(data.label).replace(/\s*\(.*\)\s*$/, ""), wait = (Date.now() - t0) / 1000;
-    const meta = { stt: transcribeYen, model, style: settings.style, yen: data.yen, sec: data.sec, wait, runs: summaryRuns.slice() }, sections = parseSoap(data.text);
+    const meta = { stt: transcribeYen, model, style: data.style || settings.style, yen: data.yen, sec: data.sec, wait, runs: summaryRuns.slice() }, sections = parseSoap(data.text);
     views[key] = { sections, meta }; shownKey = key;
     const c = evNow();
     if (c) {
@@ -1127,27 +1127,28 @@ $("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("
 
 // ---- 節約モード(まとめのAIの切り替え。⚙設定の「まとめのAI」と同じ値。この端末に覚える) ----
 // ふだんはオフ(Opus)。オンにすると Sonnet で約半額。テストで長い会話の歯の番号を1回取り違えたので、オンの間は注意を出す
-const AI_NOTE = { opus: "オフ=Opus(精度重視)", sonnet: "歯の番号をよく確認してください" };
+const AI_NOTE = { opus: "オフ=Opus(精度重視)", sonnet: "歯の番号をよく確認してください", haiku: "Haiku・用語だけ・歯の番号は「右下6番」のように文字で。抜けがないか確認してください" };
 function renderAiPick() {
-  const m = settings.model || "opus", eco = m === "sonnet";
+  const m = settings.model || "opus", eco = m !== "opus";
   $("aiSave").checked = eco;
   $("aiNote").textContent = AI_NOTE[m];
-  $("aiLbl").textContent = eco ? "節約モード オン" : "節約モード(Sonnet・約半額)";
+  $("aiLbl").textContent = m === "haiku" ? "節約モード オン(Haiku)" : eco ? "節約モード オン" : "節約モード(Sonnet・約半額)";
   $("aiLine").classList.toggle("on", eco);
   $("run").classList.toggle("eco", eco);
 }
 $("aiSave").onchange = () => {
   settings = { ...settings, model: $("aiSave").checked ? "sonnet" : "opus" };
   store.set("settings", settings);
-  renderAiPick();
+  renderAiPick(); renderStyle();
 };
 renderAiPick();
 // まとめ方の切り替え(画面と⚙設定で同じ値)
 const STYLE_NAME = { plain: "言い換えない", terms: "用語だけ", full: "病名まで" };
 const STYLE_NOTE = { plain: "話した言葉のまま", terms: "病名は付けません", full: "病名は黄色を確認" };
 function renderStyle() {
-  document.querySelectorAll("#stylePick button").forEach((b) => b.classList.toggle("on", b.dataset.v === settings.style));
-  $("styleNote").textContent = STYLE_NOTE[settings.style] || "";
+  const hk = settings.model === "haiku", st = hk ? "terms" : settings.style; // Haiku は用語だけに決まっている
+  document.querySelectorAll("#stylePick button").forEach((b) => b.classList.toggle("on", b.dataset.v === st));
+  $("styleNote").textContent = hk ? "Haikuは用語だけで固定" : STYLE_NOTE[st] || "";
 }
 $("stylePick").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
