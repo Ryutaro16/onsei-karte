@@ -236,7 +236,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/17b(文字起こしはOpenAIだけに)</p>
+    <p class="muted">版 11/17c(文字起こしの精度の直し)</p>
   </div>
 </dialog>
 
@@ -759,6 +759,7 @@ $("recBtn").onclick = () => { if (recording) stopRecording(); else { setMode("co
 $("cancelRec").onclick = () => { if (recording && confirm("録音をやめますか?\nここまでの文字は残りますが、最後の1分ほどは文字にならず、SOAPにもまとめません。")) stopRecording(false); };
 
 // 区切りを順番に送る。失敗したらそこで止めて、順番が入れ替わらないようにする
+// 2026-11-17 それまでの文字の最後(X-Prev)も送り、区切りの継ぎ目でも話の流れがつながるようにする(サーバーが最後の150字ほどを前提に足す)
 async function sendQueue() {
   if (sending || failed.length) return;
   sending = true; recInfo();
@@ -768,7 +769,7 @@ async function sendQueue() {
     for (let i = 0; i < 3 && !data; i++) {
       try {
         const res = await fetch((settings.api || DEFAULT_API).replace(/\/$/, "") + "/api/transcribe", {
-          method: "POST", headers: { "Content-Type": blob.type.split(";")[0], "X-Passphrase": settings.pass || "", "X-Device": encodeURIComponent(settings.device || ""), "X-Mode": mode, "X-Stt": settings.stt || "openai" }, body: blob,
+          method: "POST", headers: { "Content-Type": blob.type.split(";")[0], "X-Passphrase": settings.pass || "", "X-Device": encodeURIComponent(settings.device || ""), "X-Mode": mode, "X-Stt": settings.stt || "openai", "X-Prev": encodeURIComponent(input.value.slice(-300)) }, body: blob,
         });
         const d = await res.json().catch(() => ({ error: `サーバーの応答を読めませんでした(${res.status})` }));
         if (!res.ok || d.error) { err = d.error || `エラー(${res.status})`; if (res.status < 500) break; }
