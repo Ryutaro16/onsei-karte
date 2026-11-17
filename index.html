@@ -167,7 +167,6 @@
 
   <textarea id="input" placeholder="ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。&#10;例:右下6番、3日前から冷たいものがしみる。打診マイナス…"></textarea>
   <div class="hint"><span id="inputHint">聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
-  <div class="styleline" id="sttLine"><span>文字起こし</span><span class="seg" id="sttSeg"><button data-v="openai">OpenAI</button><button data-v="groq">Groq 節約</button></span><span id="sttNote"></span></div>
   <div class="styleline"><span>まとめ方</span><span class="seg" id="stylePick"><button data-v="plain">言い換えない</button><button data-v="terms">用語だけ</button><button data-v="short">用語・短め</button><button data-v="full">病名まで</button></span><span id="styleNote"></span></div>
   <div class="styleline" id="aiLine"><span>まとめのAI</span><span class="seg" id="aiSeg"><button data-v="opus">Opus</button><button data-v="sonnet">Sonnet</button><button data-v="haiku">Haiku</button></span><span id="aiNote"></span></div>
 
@@ -214,8 +213,6 @@
   <select id="autoClear"><option value="0">消さない</option><option value="5">5分</option><option value="10">10分</option><option value="30">30分</option><option value="60">60分</option></select>
   <label for="aiModel">まとめのAI</label>
   <select id="aiModel"><option value="opus">Opus(精度重視・10分の会話 約7円)</option><option value="sonnet">Sonnet(節約・10分の会話 約3円)</option><option value="haiku">Haiku(最安・用語だけ・歯の番号は文字で)</option></select>
-  <label for="sttPick">文字起こし</label>
-  <select id="sttPick"><option value="openai">OpenAI(ふだん・10分 約6.8円)</option><option value="groq">Groq(節約・10分 約1円・聞き間違いはやや多め)</option></select>
   <label for="aiStyle">まとめ方(患者さん向けのやさしい言い方を、どこまで歯科用語にするか)</label>
   <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="short">用語・短め(用語だけを短く。確認欄は大事な5件まで)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
   <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
@@ -239,7 +236,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/17a(設定を開いてもキーボードを出さない)</p>
+    <p class="muted">版 11/17b(文字起こしはOpenAIだけに)</p>
   </div>
 </dialog>
 
@@ -338,6 +335,8 @@ if (settings.keepDays == null) settings.keepDays = 7; // まとめの履歴を�
 // 2026-11-14 まとめ方(plain=言い換えない / terms=用語だけ / full=病名まで)。初期値は「用語だけ」
 if (!["plain", "terms", "short", "full"].includes(settings.style)) { settings.style = "terms"; store.set("settings", settings); }
 if (!settings.mSet) { settings.model = "sonnet"; settings.mSet = 1; store.set("settings", settings); }
+// 2026-11-17 文字起こしは OpenAI だけに(Groq は実際の診療の会話で聞き間違い・作り話が多く、切り替えから外した)
+if (settings.stt && settings.stt !== "openai") { settings.stt = "openai"; store.set("settings", settings); }
 
 // 「S:」「O:」「A:」「P:」と、貼らない「確認:」の見出しで分ける
 function parseSoap(text) {
@@ -1155,9 +1154,9 @@ for (const d of document.querySelectorAll("dialog")) {
   d.addEventListener("close", () => { d.style.transition = "none"; reset(); });
 }
 
-$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("sttPick").value = settings.stt || "openai"; $("evOn").checked = !settings.evOff; $("aiStyle").value = settings.style; $("settings").showModal(); loadUsage(); evInfo(); };
+$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("evOn").checked = !settings.evOff; $("aiStyle").value = settings.style; $("settings").showModal(); loadUsage(); evInfo(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value, stt: $("sttPick").value, evOff: !$("evOn").checked, style: $("aiStyle").value };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value, stt: "openai", evOff: !$("evOn").checked, style: $("aiStyle").value };
   if (settings.evOff) evCase = null; store.set("settings", settings); renderAiPick(); renderStyle(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
 
 // ---- まとめのAI・文字起こしの切り替え(画面と⚙設定で同じ値。この端末に覚える。2026-11-15 節約スイッチから3つの選択に) ----
@@ -1169,20 +1168,11 @@ function renderAiPick() {
   $("aiNote").textContent = AI_NOTE[m];
   $("aiLine").classList.toggle("on", eco);
   $("run").classList.toggle("eco", eco);
-  const st = settings.stt === "groq" ? "groq" : "openai";
-  document.querySelectorAll("#sttSeg button").forEach((b) => b.classList.toggle("on", b.dataset.v === st));
-  $("sttNote").textContent = st === "groq" ? "10分 約1円" : "10分 約6.8円";
 }
 $("aiSeg").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
   settings = { ...settings, model: b.dataset.v }; store.set("settings", settings);
   renderAiPick(); renderStyle();
-};
-$("sttSeg").onclick = (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  if (recording) { toast("録音中は切り替えられません"); return; }
-  settings = { ...settings, stt: b.dataset.v }; store.set("settings", settings);
-  renderAiPick();
 };
 renderAiPick();
 // まとめ方の切り替え(画面と⚙設定で同じ値)
