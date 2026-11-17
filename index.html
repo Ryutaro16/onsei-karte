@@ -35,6 +35,21 @@
   #status.err { color:var(--ng); font-weight:700; }
   .notice { background:var(--note-bg); border:1px solid var(--note-line); border-radius:10px; padding:10px 12px; margin:10px 0; font-size:15px; }
   .notice ul { margin:4px 0 0; padding-left:1.2em; }
+  /* 確認欄:さわって直す(2026-11-17) */
+  .ck { border-top:1px solid var(--note-line); padding:8px 0; }
+  .ck:first-of-type { border-top:none; }
+  .ck.done { opacity:.55; }
+  .ck.hl { background:rgba(255,216,74,.35); border-radius:8px; }
+  .ck .q { font-size:15px; }
+  .ck .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .ck .acts button { min-height:34px; font-size:14px; padding:3px 10px; }
+  .ck .acts button.cand { border-color:var(--accent, #0a66c2); color:var(--accent, #0a66c2); }
+  .ck .acts button.main { font-weight:700; }
+  .ck .teeth { display:grid; grid-template-columns:repeat(8, 1fr); gap:3px; width:100%; }
+  .ck .teeth button { padding:3px 0; min-height:32px; font-size:13px; }
+  .ck .lines { display:flex; flex-direction:column; gap:4px; width:100%; }
+  .ck .lines button { text-align:left; }
+  .ck input.fix { font-size:16px; padding:4px 6px; flex:1; min-width:8em; }
   .soap { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card); }
   .sec { display:flex; border-top:1px solid var(--line); }
   .sec:first-child { border-top:none; }
@@ -239,7 +254,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/17d(長さの切り替え・Aと訴えの基準)</p>
+    <p class="muted">版 11/17e(確認欄をさわって直す)</p>
   </div>
 </dialog>
 
@@ -359,12 +374,101 @@ function parseSoap(text) {
 }
 
 // 貼る前に見る点(コピーには入れない)
-let checkItems = [];
+// 2026-11-17 さわって直せる確認欄:AIが行の終わりに付ける印 [候補:…/…]・[対象:…] を使い、選ぶと本文の言葉が差し替わる(=全部コピーの文も変わる)。
+// AIは呼ばない(0円)。済んだ項目は行の終わりに {済:…} を付けて残す(履歴・詳しい記録にもそのまま残り、どの推測が当たり・外れたか分析できる)
+let checkItems = [], ckOpen = null; // ckOpen = { i, kind:"edit"|"tooth"|"line", tooth }
+function ckParse(line) {
+  const cands = ((line.match(/\[候補[:：]([^\]]*)\]/) || [])[1] || "").split(/[\/／]/).map((x) => x.trim()).filter(Boolean);
+  const target = ((line.match(/\[対象[:：]([^\]]*)\]/) || [])[1] || "").trim();
+  const done = (line.match(/\{済[:：]([^}]*)\}/) || [])[1];
+  const arrow = line.match(/「([^」]+)」\s*→\s*「([^」]+)」/);
+  const text = line.replace(/\s*\[(候補|対象)[:：][^\]]*\]/g, "").replace(/\s*\{済[:：][^}]*\}/g, "").trim();
+  const sec = (text.match(/^([SOAP])[\s・「]/) || [])[1] || "";
+  const word = arrow ? arrow[2] : cands[0] || "";
+  const tooth = !!target || /(部位|歯の番号|歯番|どの歯)[^。]*(発言なし|不明|言われていない|ない)/.test(text);
+  return { text, cands, target, done, from: arrow ? arrow[1] : "", word, sec, tooth };
+}
+const ckText = (i) => ckParse(checkItems[i]).text; // 印を外した文(表示・CSVの件数用)
+const hasMark = (w) => KEYS.some((k) => getMarked(k).includes(`〘${w}〙`));
 function showChecks() {
   const box = $("checks");
   box.hidden = !checkItems.length;
-  box.innerHTML = checkItems.length ? `<b>貼る前に確認(${checkItems.length}件・コピーには入りません)</b><ul>${checkItems.map((i) => `<li>${esc(i)}</li>`).join("")}</ul><div class="legend">本文の<mark class="guess">黄色の言葉</mark>は、AIが推測して直したところです(コピーすると色は消えます)。</div>` : "";
+  if (!checkItems.length) { box.innerHTML = ""; return; }
+  const left = checkItems.filter((l) => ckParse(l).done === undefined).length;
+  let html = `<b>貼る前に確認(${checkItems.length}件${left < checkItems.length ? `・残り${left}件` : ""}・コピーには入りません)</b><div class="sub" style="font-size:13px">さわって選ぶと、本文と「全部コピー」の文が直ります</div>`;
+  checkItems.forEach((line, i) => {
+    const c = ckParse(line);
+    if (c.done !== undefined) { html += `<div class="ck done" data-i="${i}"><div class="q">✓ ${esc(c.text)} <span class="sub">${esc(c.done)}</span></div></div>`; return; }
+    let acts = "";
+    const live = c.word && hasMark(c.word);
+    if (live) {
+      for (const x of c.cands) if (x !== c.word) acts += `<button class="cand" data-a="cand" data-v="${esc(x)}">${esc(x)}</button>`;
+      acts += `<button class="main" data-a="ok">このままでよい</button>`;
+      if (c.from && c.from !== c.word) acts += `<button data-a="back">元に戻す「${esc(c.from)}」</button>`;
+      acts += `<button data-a="edit">自分で直す</button>`;
+      if (ckOpen && ckOpen.i === i && ckOpen.kind === "edit") acts += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckFix" value="${esc(c.word)}"><button class="main" data-a="save">決定</button></div>`;
+    } else if (c.tooth) {
+      acts += `<button class="main" data-a="tooth">歯を選んで足す</button><button data-a="skip">足さない</button>`;
+      if (ckOpen && ckOpen.i === i && ckOpen.kind === "tooth") acts += `<div class="teeth">${ckTeeth()}</div>`;
+      if (ckOpen && ckOpen.i === i && ckOpen.kind === "line") acts += `<div class="sub" style="width:100%">${esc(ckOpen.tooth)} を足す行を選んでください</div><div class="lines">${ckLines(c.sec)}</div>`;
+    } else acts += `<button class="main" data-a="seen">確認した</button>`;
+    html += `<div class="ck" data-i="${i}"><div class="q">${esc(c.text)}</div><div class="acts">${acts}</div></div>`;
+  });
+  html += `<div class="legend">本文の<mark class="guess">黄色の言葉</mark>は、AIが推測して直したところです(さわると、この欄のその項目に移ります。コピーすると色は消えます)。</div>`;
+  box.innerHTML = html;
 }
+function ckTeeth() {
+  const r = [8, 7, 6, 5, 4, 3, 2, 1], l = [1, 2, 3, 4, 5, 6, 7, 8];
+  const row = (ds, f) => ds.map((d) => { const t = f(d); return `<button data-a="t" data-v="${t}">${t}</button>`; }).join("");
+  return row(r, (d) => d + "┘") + row(l, (d) => "└" + d) + row(r, (d) => d + "┐") + row(l, (d) => "┌" + d);
+}
+// 足す行の候補(項目の欄。欄が分からなければ全部の欄)
+function ckLines(sec) {
+  return (sec ? [sec] : KEYS).flatMap((k) => getMarked(k).split("\n").map((t, n) => [k, n, t]).filter(([, , t]) => t.trim() && t.trim() !== "記載なし"))
+    .map(([k, n, t]) => `<button data-a="line" data-k="${k}" data-n="${n}">${k} ${esc(t.replace(/[〘〙]/g, "").slice(0, 40))}</button>`).join("");
+}
+function ckReplace(word, to) { // 本文の〘word〙を to に(黄色を外す)
+  for (const k of KEYS) { const v = getMarked(k); if (v.includes(`〘${word}〙`)) setBox(k, v.replace(`〘${word}〙`, to)); }
+}
+function ckAddTooth(k, n, tooth) {
+  const ls = getMarked(k).split("\n");
+  ls[n] = ls[n].replace(/^(\s*[・\-]?\s*)/, `$1${tooth} `);
+  setBox(k, ls.join("\n"));
+}
+function ckDone(i, label, log) {
+  checkItems[i] = checkItems[i].replace(/\s*\{済[:：][^}]*\}/g, "") + ` {済:${label}}`;
+  if (evCase) { (evCase.checks = evCase.checks || []).push({ at: Date.now(), key: shownKey, item: ckText(i), ...log }); }
+  ckOpen = null; saveLast(); checkTeeth(); showChecks();
+}
+$("checks").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const el = b.closest(".ck"), i = +el.dataset.i, c = ckParse(checkItems[i]), a = b.dataset.a;
+  if (a === "ok") { ckReplace(c.word, c.word); ckDone(i, "このまま", { act: "ok", to: c.word }); }
+  else if (a === "cand") { ckReplace(c.word, b.dataset.v); ckDone(i, `「${b.dataset.v}」を選んだ`, { act: "cand", from: c.word, to: b.dataset.v }); }
+  else if (a === "back") { ckReplace(c.word, c.from); ckDone(i, `「${c.from}」に戻した`, { act: "back", from: c.word, to: c.from }); }
+  else if (a === "edit") { ckOpen = { i, kind: "edit" }; showChecks(); $("ckFix")?.focus(); }
+  else if (a === "save") { const v = ($("ckFix").value || "").trim() || c.word; ckReplace(c.word, v); ckDone(i, `「${v}」に直した`, { act: "edit", from: c.word, to: v }); }
+  else if (a === "seen") ckDone(i, "確認した", { act: "seen" });
+  else if (a === "skip") ckDone(i, "足さない", { act: "skip" });
+  else if (a === "tooth") { ckOpen = ckOpen && ckOpen.i === i ? null : { i, kind: "tooth" }; showChecks(); }
+  else if (a === "t") {
+    // AIが教えた対象の言葉がある行が1つに決まれば、そこに足す。決まらなければ行を選んでもらう
+    const hits = c.target ? (c.sec ? [c.sec] : KEYS).flatMap((k) => getMarked(k).split("\n").map((t, n) => [k, n, t])).filter(([, , t]) => t.replace(/[〘〙]/g, "").includes(c.target)) : [];
+    if (hits.length === 1) { ckAddTooth(hits[0][0], hits[0][1], b.dataset.v); ckDone(i, `${b.dataset.v} を足した`, { act: "tooth", to: b.dataset.v }); }
+    else { ckOpen = { i, kind: "line", tooth: b.dataset.v }; showChecks(); }
+  }
+  else if (a === "line") { ckAddTooth(b.dataset.k, +b.dataset.n, ckOpen.tooth); ckDone(i, `${ckOpen.tooth} を足した`, { act: "tooth", to: ckOpen.tooth }); }
+});
+$("checks").addEventListener("keydown", (e) => { if (e.target.id === "ckFix" && e.key === "Enter") { e.preventDefault(); e.target.closest(".ck").querySelector('[data-a="save"]').click(); } });
+// 本文の黄色の言葉をさわったら、確認欄のその項目へ(キーボードは出さない)
+$("soap").addEventListener("mousedown", (e) => { if (e.target.closest("mark.guess")) e.preventDefault(); });
+$("soap").addEventListener("click", (e) => {
+  const m = e.target.closest("mark.guess"); if (!m) return;
+  e.preventDefault();
+  const i = checkItems.findIndex((l) => { const c = ckParse(l); return c.done === undefined && c.word === m.textContent; });
+  const el = i >= 0 && $("checks").querySelector(`.ck[data-i="${i}"]`);
+  if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("hl"); setTimeout(() => el.classList.remove("hl"), 1500); }
+});
 
 function showResult(sections, meta) {
   checkItems = (sections.確認 || "").split("\n").map((l) => l.replace(/^\s*[・\-]\s*/, "").trim()).filter((l) => l && l !== "なし");
@@ -1374,12 +1478,14 @@ async function evalCsv() {
   const jst = (t) => { if (!t) return ""; const d = new Date(t); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`; };
   const plain = (v) => String(v || "").replace(/[〘〙]/g, "").trim();
   const norm = (v) => plain(v).replace(/\s+/g, " ");
+  // 確認欄で選んだこと(項目→選んだこと)
+  const ckSummary = (v) => String(v || "").split("\n").map((l) => ckParse(l)).filter((c) => c.done !== undefined).map((c) => `${c.text}→${c.done}`).join(" / ");
   const sum = (a, f) => a.reduce((x, y) => x + (Number(y[f]) || 0), 0);
   const head = ["記録ID", "始めた日時", "端末", "使い方", "この1人分のAI", "文字起こしの区切り数", "録音(秒)", "文字起こしの処理(秒)", "止めてから文字になるまで(秒)", "文字起こし(円)", "文字起こしの会社",
     "回", "まとめた日時", "きっかけ", "まとめのAI", "まとめ方", "実際に答えたモデル", "指示文の版", "送った字数", "送った文を手で直したか", "入力トークン", "とっておいた指示文(書き込み)", "とっておいた指示文(読み出し)", "出力トークン(考えた分を含む)",
     "まとめの待ち(秒・アプリ)", "まとめの処理(秒・サーバー)", "まとめ(円)", "止まった理由", "まとめの字数", "確認欄の件数", "推測した言葉(黄色)", "まとめの歯の番号", "話した歯の番号", "話した言葉にない歯の番号(オレンジ)",
     "最終版か", "先生が直した欄", "歯の番号を直した", "コピー・送った回数", "評価", "評価の理由", "評価のメモ",
-    "文字起こしそのまま", "AIへ送った文", "AIのS", "AIのO", "AIのA", "AIのP", "AIの確認", "最終のS", "最終のO", "最終のA", "最終のP", "AIの答えそのまま"];
+    "文字起こしそのまま", "AIへ送った文", "AIのS", "AIのO", "AIのA", "AIのP", "AIの確認", "最終のS", "最終のO", "最終のA", "最終のP", "確認欄で選んだこと", "AIの答えそのまま"];
   const rows = [head.join(",")];
   for (const c of cases) {
     const stt = c.stt || [], runs = c.runs || [], f = c.final || {}, r = c.rec || {}, edits = c.edits || [], copies = c.copies || [];
@@ -1411,7 +1517,7 @@ async function evalCsv() {
         t.in ?? "", t.cacheW ?? "", t.cacheR ?? "", t.out ?? "", n1(u.wait), n1(u.sec), n2(u.yen), u.stop || "",
         KEYS.map((k) => plain(ai[k])).join("").length, checks.length, guesses.join("・"), teeth.join(" "), [...spoken.keys()].join(" "), odd.join(" "),
         shown ? "はい(画面に出ていた方)" : fs ? "はい(見比べたもう一方)" : "いいえ", fs ? KEYS.filter((k) => norm(fs[k]) !== norm(ai[k])).join("・") || "なし" : "", fixed.join("・"), within(copies, i).length, (u.rating || {}).score || "", ((u.rating || {}).why || []).join("・"), (u.rating || {}).memo || "",
-        sttText, u.input || "", ...KEYS.map((k) => plain(ai[k])), plain(ai.確認), ...(fs ? KEYS.map((k) => plain(fs[k])) : ["", "", "", ""]), u.raw || ""].map(cell).join(","));
+        sttText, u.input || "", ...KEYS.map((k) => plain(ai[k])), plain(ai.確認), ...(fs ? KEYS.map((k) => plain(fs[k])) : ["", "", "", ""]), fs ? ckSummary(fs.確認) : "", u.raw || ""].map(cell).join(","));
     });
   }
   // 履歴の分:見出しの名前で入れる(ない値は空欄)
