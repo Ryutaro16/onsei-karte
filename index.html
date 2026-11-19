@@ -282,7 +282,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/19g(同じ歯をほかの項目にも・行を書き換えて足す)</p>
+    <p class="muted">版 11/19h(歯を足す行を探しやすく)</p>
   </div>
 </dialog>
 
@@ -407,7 +407,8 @@ let checkItems = [], ckOpen = null, ckSel = -1, ckFlash = null; // ckOpen = 開�
 // 確認欄の1行を読む。印:[候補:…/…] [対象:…] [書く:…](AIが付ける)・{済:…} {戻:欄|行|元の行}(アプリが付ける)
 function ckParse(line) {
   const cands = ((line.match(/\[候補[:：]([^\]]*)\]/) || [])[1] || "").split(/[\/／]/).map((x) => x.trim()).filter(Boolean);
-  const target = ((line.match(/\[対象[:：]([^\]]*)\]/) || [])[1] || "").trim();
+  // [対象:…] のほか、AIが[ ]を付け忘れた行の終わりの「対象:…」も読む
+  const target = ((line.match(/\[対象[:：]([^\]]*)\]/) || line.match(/\s対象[:：]\s*([^\[\]{}]+?)\s*(?=\[|\{|$)/) || [])[1] || "").trim();
   const write = ((line.match(/\[書く[:：]([^\]]*)\]/) || [])[1] || "").trim();
   // [案:…/…] 歯科医師が書きそうな文(直す・書き足すで押すと入力欄に入る)
   const ideas = ((line.match(/\[案[:：]([^\]]*)\]/) || [])[1] || "").split(/[\/／]/).map((x) => x.trim()).filter(Boolean);
@@ -415,14 +416,14 @@ function ckParse(line) {
   const undoM = line.match(/\{戻[:：]([SOAP])\|(\d+)\|([^}]*)\}/);
   const undo = undoM ? { k: undoM[1], n: +undoM[2], old: undoM[3] === "-" ? null : decodeURIComponent(undoM[3].replace(/^\+/, "")), ins: undoM[3].startsWith("+") } : null;
   const arrow = line.match(/「([^」]+)」\s*→\s*「([^」]+)」/);
-  const text = line.replace(/\s*\[(候補|対象|書く|案)[:：][^\]]*\]/g, "").replace(/\s*\{(済|戻)[:：][^}]*\}/g, "").trim();
+  const text = line.replace(/\s*\[(候補|対象|書く|案)[:：][^\]]*\]/g, "").replace(/\s対象[:：]\s*[^\[\]{}]+?\s*(?=\[|\{|$)/, "").replace(/\s*\{(済|戻)[:：][^}]*\}/g, "").trim();
   const sec = (text.match(/^([SOAP])[\s・「]/) || [])[1] || "";
   // 本文の黄色の言葉:候補の1つ目(=本文の〘〙と同じ決まり)を優先し、なければ「→」のあとの言葉
   const word = cands[0] || (arrow ? arrow[2] : "");
   const tooth = !!write || /(部位|歯の番号|歯番|どの歯)[^。]*(発言なし|不明|言われていない|ない)/.test(text);
   // 新しい行に最初から入れる言葉:AIの[書く:]、なければ項目の文の「…」
   const quote = (text.match(/「([^」]+)」/) || [])[1] || "";
-  return { text, cands, target, ideas, write: write || (arrow ? "" : quote), done, undo, from: arrow ? arrow[1] : "", word, sec, tooth };
+  return { text, cands, target, quote, ideas, write: write || (arrow ? "" : quote), done, undo, from: arrow ? arrow[1] : "", word, sec, tooth };
 }
 const ckText = (i) => ckParse(checkItems[i]).text; // 印を外した文(表示・CSVの件数用)
 const hasMark = (w) => KEYS.some((k) => getMarked(k).includes(`〘${w}〙`));
@@ -456,10 +457,13 @@ function ckWhere(c) {
 }
 function ckTargetLine(c) {
   // [対象]がなくても、歯の項目の[書く]の言葉が本文の行にあれば、その行を対象にする(同じ内容の行が2つにならないように)
-  const key = c.target || (c.tooth && c.write ? c.write : "");
-  if (!key) return null;
-  const hits = (c.sec ? [c.sec] : KEYS).flatMap((k) => ckLinesOf(k).map((t, n) => [k, n, t])).filter(([, , t]) => t.replace(/[〘〙]/g, "").includes(key));
-  return hits.length === 1 ? [hits[0][0], hits[0][1]] : null;
+  // [対象]がなければ、歯の項目では[書く]の言葉、それもなければ項目の文の「…」の言葉で本文の行を探す
+  const keys = [c.target, c.tooth ? c.write : "", c.tooth ? c.quote : ""].filter(Boolean);
+  for (const key of keys) {
+    const hits = (c.sec ? [c.sec] : KEYS).flatMap((k) => ckLinesOf(k).map((t, n) => [k, n, t])).filter(([, , t]) => t.replace(/[〘〙]/g, "").includes(key));
+    if (hits.length === 1) return [hits[0][0], hits[0][1]];
+  }
+  return null;
 }
 // 本文を囲う(選んでいる項目の場所=青い枠、直したばかりの行=緑に光る)
 function ckPaint() {
@@ -557,7 +561,8 @@ function ckHow(c, op) {
     const v = op.rewrite ?? `${op.tooth} ${body}`;
     h += `<div class="sub" style="width:100%">この行を書き換えて足す(書き足してから「決定」)</div><div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckToothRewrite" value="${esc(v)}"><button data-a="toothRewrite">決定</button></div>`;
   }
-  h += `<button data-a="pickLine">ほかの行を選ぶ</button>`;
+  if (t) h += `<button data-a="pickLine">ほかの行を選ぶ</button>`;
+  else h += `<div class="sub" style="width:100%">頭に ${esc(op.tooth)} を足す行を選ぶ</div><div class="lines">${ckLines(c.sec || null, "line")}</div><div class="sub" style="width:100%">または新しい行で書く</div>`;
   h += `<div style="display:flex;gap:6px;width:100%;align-items:center"><span>${esc(op.tooth)}</span><input class="fix" id="ckNewLine" value="${esc(w)}" placeholder="新しい行で書く"></div>`;
   h += `<button class="${t ? "" : "main"}" data-a="newLine" data-k="${sec}">${sec}に新しい行で足す:${esc(op.tooth)} ${esc(w)}</button>`;
   return h;
