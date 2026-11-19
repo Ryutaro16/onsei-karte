@@ -51,7 +51,11 @@
   .ck .acts button.undo { min-height:28px; font-size:13px; padding:2px 8px; }
   .ckhead { display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; font-size:13px; margin:2px 0 4px; }
   .ckhead .seg button { min-height:28px; font-size:12px; padding:2px 8px; }
-  .ckprev { width:100%; font-size:14px; background:var(--card); border-radius:8px; padding:6px 8px; }
+  .ckstep { font-size:13px; color:var(--sub); margin:4px 0 0; } .ckstep b { color:var(--ink); }
+  .ckstage { margin-top:8px; border:2px solid #e8890c; border-radius:10px; padding:8px; background:#fff8ee; }
+  .cknext { display:inline-block; font-size:12px; font-weight:700; color:#fff; background:#e8890c; border-radius:8px; padding:1px 8px; }
+  .ck .acts button.dim { color:var(--sub); font-weight:400; }
+    .ckprev { width:100%; font-size:14px; background:var(--card); border-radius:8px; padding:6px 8px; }
   .ckprev del { color:var(--sub); } .ckprev ins { text-decoration:none; color:var(--ok, #1f8a5b); font-weight:700; }
   .ckhl { outline:2px solid var(--acc, #0a66c2); background:rgba(10,102,194,.14); border-radius:4px; }
   .ckhl.flash { animation:ckFlash 1.3s ease-out; } .ckhl.only { outline:none; }
@@ -178,6 +182,7 @@
   .tp-chart .hr { grid-column:1/-1; height:3px; background:var(--sub); border-radius:2px; margin:2px 0; }
   [hidden] { display:none !important; }
   @media (prefers-color-scheme: dark) {
+    .ckstage { background:#33270f; }
     :root { --ink:#e6e9ec; --sub:#9aa5b1; --line:#3a424a; --bg:#15191d; --card:#1f252b; --note-bg:#26303a; --note-line:#3d4b59; --ng:#ff7b6b; }
     .sec .k { background:#26303a; }
     .tooth { border-bottom-color:#6ea8ff; }
@@ -277,7 +282,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/19e(確認欄:書きそうな文の案)</p>
+    <p class="muted">版 11/19f(次の段をオレンジの枠で)</p>
   </div>
 </dialog>
 
@@ -475,7 +480,8 @@ function showChecks() {
       return;
     }
     const op = ckOpen && ckOpen.i === i ? ckOpen : null;
-    let acts = "";
+    // acts=最初の段のボタン / stage=次の段(開いたときだけ。オレンジの枠で囲い「次はここ」) / step=手順の表示(2026-11-19 案2)
+    let acts = "", stage = "", step = "", label = "次はここ";
     const live = c.word && hasMark(c.word);
     if (live) {
       for (const x of c.cands) if (x !== c.word) acts += `<button class="cand" data-a="cand" data-v="${esc(x)}">${esc(x)}</button>`;
@@ -484,14 +490,15 @@ function showChecks() {
       acts += `<button data-a="edit">自分で直す</button>`;
       if (op && op.kind === "pre") {
         const w = ckWhere(c);
-        if (w && w[1] >= 0) { const l = ckLinesOf(w[0])[w[1]]; acts += `<div class="ckprev">${w[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del><br>→ <ins>${esc(l.replace(`〘${c.word}〙`, op.v).replace(/[〘〙]/g, ""))}</ins><div class="acts"><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button></div></div>`; }
+        if (w && w[1] >= 0) { const l = ckLinesOf(w[0])[w[1]]; stage += `<div class="ckprev">${w[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del><br>→ <ins>${esc(l.replace(`〘${c.word}〙`, op.v).replace(/[〘〙]/g, ""))}</ins></div><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button>`; label = "よければ「決定」"; }
       }
-      if (op && op.kind === "edit") acts += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckFix" value="${esc(c.word)}"><button class="main" data-a="save">決定</button></div>`;
+      if (op && op.kind === "edit") { stage += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckFix" value="${esc(c.word)}"><button class="main" data-a="save">決定</button></div>`; label = "書き換えて「決定」"; }
     } else if (c.tooth) {
-      acts += `<button class="main" data-a="tooth">歯を選ぶ(何本でも)</button><button data-a="note">書き足す</button><button data-a="skip">足さない</button>`;
-      if (op && op.kind === "tooth") acts += ckChart(op.sel || []);
-      if (op && op.kind === "how") acts += ckHow(c, op);
-      if (op && op.kind === "line") acts += `<div class="sub" style="width:100%">${esc(op.tooth)} を頭に足す行を選んでください</div><div class="lines">${ckLines(c.sec)}</div>`;
+      const picked = op && (op.kind === "how" || op.kind === "line");
+      acts += `<button class="main" data-a="tooth">${picked ? "歯を選び直す" : "歯を選ぶ(何本でも)"}</button><button data-a="note">書き足す</button><button data-a="skip">足さない</button>`;
+      if (op && op.kind === "tooth") { stage += ckChart(op.sel || []); step = `<b>① 歯を選んで「決定」</b> → ② 足し方を選ぶ`; label = "① 次はここ"; }
+      if (op && op.kind === "how") { stage += ckHow(c, op); step = `① 歯を選ぶ ✓ <b>${esc(op.tooth)}</b> → <b>② 足し方を選ぶ</b>`; label = "② 次はここ"; }
+      if (op && op.kind === "line") { stage += `<div class="sub" style="width:100%">${esc(op.tooth)} を頭に足す行を選んでください</div><div class="lines">${ckLines(c.sec)}</div>`; step = `① 歯を選ぶ ✓ <b>${esc(op.tooth)}</b> → <b>② 足す行を選ぶ</b>`; label = "② 次はここ"; }
     } else {
       // 本文のどの行の話か分かる項目:このままでよい/この行を直す/この行を消す(2026-11-19 「確認した」はなくした)
       // 分からない項目:このままでよい/書き足す/行を選んで直す/行を選んで消す(どの行かは先生が選ぶ。間違えてもやり直せる)
@@ -499,13 +506,15 @@ function showChecks() {
       acts += `<button class="main" data-a="seen">このままでよい</button>`;
       if (tl) acts += `<button data-a="lineEdit">この行を直す</button><button data-a="lineDel">この行を消す</button>`;
       else acts += `<button data-a="note">書き足す</button><button data-a="pickEdit">行を選んで直す</button><button data-a="pickDel">行を選んで消す</button>`;
-      if (op && op.kind === "pickEdit") acts += `<div class="sub" style="width:100%">直す行を選んでください</div><div class="lines">${ckLines(c.sec, "editPick")}</div>`;
-      if (op && op.kind === "pickDel") acts += `<div class="sub" style="width:100%">消す行を選んでください(間違えても「やり直す」で戻せます)</div><div class="lines">${ckLines(c.sec, "delPick")}</div>`;
-      if (op && op.kind === "delPre" && t) acts += `<div class="ckprev">${t[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del> を消します<div class="acts"><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button></div></div>`;
-      if (op && op.kind === "lineEdit" && t) acts += ckIdeas(c, "ckLineFix") + `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckLineFix" value="${esc(l.replace(/^\s*[・\-]\s*/, "").replace(/[〘〙]/g, ""))}"><button class="main" data-a="lineSave">決定</button></div>`;
+      if (op && op.kind === "pickEdit") { stage += `<div class="lines">${ckLines(c.sec, "editPick")}</div>`; label = "直す行を選ぶ"; }
+      if (op && op.kind === "pickDel") { stage += `<div class="lines">${ckLines(c.sec, "delPick")}</div><div class="sub" style="width:100%">間違えても「やり直す」で戻せます</div>`; label = "消す行を選ぶ"; }
+      if (op && op.kind === "delPre" && t) { stage += `<div class="ckprev">${t[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del> を消します</div><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button>`; label = "よければ「決定」"; }
+      if (op && op.kind === "lineEdit" && t) { stage += ckIdeas(c, "ckLineFix") + `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckLineFix" value="${esc(l.replace(/^\s*[・\-]\s*/, "").replace(/[〘〙]/g, ""))}"><button class="main" data-a="lineSave">決定</button></div>`; label = "書き換えて「決定」"; }
     }
-    if (op && (op.kind === "note" || op.kind === "noteLine")) acts += ckNoteBox(c);
-    html += `<div class="ck${sel ? " sel" : ""}" data-i="${i}"><div class="q" data-a="see">${esc(c.text)}</div><div class="acts">${acts}</div></div>`;
+    if (op && (op.kind === "note" || op.kind === "noteLine")) { stage += ckNoteBox(c); label = op.kind === "noteLine" ? "後ろに足す行を選ぶ" : "書いて足し方を選ぶ"; }
+    // 次の段が開いているときは、最初の段のボタンを白に戻す(青は「今押すボタン」だけ)
+    if (stage) acts = acts.replace(/class="main"/g, 'class="dim"');
+    html += `<div class="ck${sel ? " sel" : ""}" data-i="${i}"><div class="q" data-a="see">${esc(c.text)}</div>${step ? `<div class="ckstep">${step}</div>` : ""}<div class="acts">${acts}</div>${stage ? `<div class="ckstage"><span class="cknext">${esc(label)}</span><div class="acts">${stage}</div></div>` : ""}</div>`;
   });
   html += `<div class="legend">本文の<mark class="guess">黄色の言葉</mark>は、AIが推測して直したところです(さわると、この欄のその項目に移ります。コピーすると色は消えます)。</div>`;
   box.innerHTML = html;
