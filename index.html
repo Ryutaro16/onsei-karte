@@ -277,7 +277,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/19d(確かめて決定:決定ボタン)</p>
+    <p class="muted">版 11/19e(確認欄:書きそうな文の案)</p>
   </div>
 </dialog>
 
@@ -404,18 +404,20 @@ function ckParse(line) {
   const cands = ((line.match(/\[候補[:：]([^\]]*)\]/) || [])[1] || "").split(/[\/／]/).map((x) => x.trim()).filter(Boolean);
   const target = ((line.match(/\[対象[:：]([^\]]*)\]/) || [])[1] || "").trim();
   const write = ((line.match(/\[書く[:：]([^\]]*)\]/) || [])[1] || "").trim();
+  // [案:…/…] 歯科医師が書きそうな文(直す・書き足すで押すと入力欄に入る)
+  const ideas = ((line.match(/\[案[:：]([^\]]*)\]/) || [])[1] || "").split(/[\/／]/).map((x) => x.trim()).filter(Boolean);
   const done = (line.match(/\{済[:：]([^}]*)\}/) || [])[1];
   const undoM = line.match(/\{戻[:：]([SOAP])\|(\d+)\|([^}]*)\}/);
   const undo = undoM ? { k: undoM[1], n: +undoM[2], old: undoM[3] === "-" ? null : decodeURIComponent(undoM[3].replace(/^\+/, "")), ins: undoM[3].startsWith("+") } : null;
   const arrow = line.match(/「([^」]+)」\s*→\s*「([^」]+)」/);
-  const text = line.replace(/\s*\[(候補|対象|書く)[:：][^\]]*\]/g, "").replace(/\s*\{(済|戻)[:：][^}]*\}/g, "").trim();
+  const text = line.replace(/\s*\[(候補|対象|書く|案)[:：][^\]]*\]/g, "").replace(/\s*\{(済|戻)[:：][^}]*\}/g, "").trim();
   const sec = (text.match(/^([SOAP])[\s・「]/) || [])[1] || "";
   // 本文の黄色の言葉:候補の1つ目(=本文の〘〙と同じ決まり)を優先し、なければ「→」のあとの言葉
   const word = cands[0] || (arrow ? arrow[2] : "");
   const tooth = !!write || /(部位|歯の番号|歯番|どの歯)[^。]*(発言なし|不明|言われていない|ない)/.test(text);
   // 新しい行に最初から入れる言葉:AIの[書く:]、なければ項目の文の「…」
   const quote = (text.match(/「([^」]+)」/) || [])[1] || "";
-  return { text, cands, target, write: write || (arrow ? "" : quote), done, undo, from: arrow ? arrow[1] : "", word, sec, tooth };
+  return { text, cands, target, ideas, write: write || (arrow ? "" : quote), done, undo, from: arrow ? arrow[1] : "", word, sec, tooth };
 }
 const ckText = (i) => ckParse(checkItems[i]).text; // 印を外した文(表示・CSVの件数用)
 const hasMark = (w) => KEYS.some((k) => getMarked(k).includes(`〘${w}〙`));
@@ -500,7 +502,7 @@ function showChecks() {
       if (op && op.kind === "pickEdit") acts += `<div class="sub" style="width:100%">直す行を選んでください</div><div class="lines">${ckLines(c.sec, "editPick")}</div>`;
       if (op && op.kind === "pickDel") acts += `<div class="sub" style="width:100%">消す行を選んでください(間違えても「やり直す」で戻せます)</div><div class="lines">${ckLines(c.sec, "delPick")}</div>`;
       if (op && op.kind === "delPre" && t) acts += `<div class="ckprev">${t[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del> を消します<div class="acts"><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button></div></div>`;
-      if (op && op.kind === "lineEdit" && t) acts += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckLineFix" value="${esc(l.replace(/^\s*[・\-]\s*/, "").replace(/[〘〙]/g, ""))}"><button class="main" data-a="lineSave">決定</button></div>`;
+      if (op && op.kind === "lineEdit" && t) acts += ckIdeas(c, "ckLineFix") + `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckLineFix" value="${esc(l.replace(/^\s*[・\-]\s*/, "").replace(/[〘〙]/g, ""))}"><button class="main" data-a="lineSave">決定</button></div>`;
     }
     if (op && (op.kind === "note" || op.kind === "noteLine")) acts += ckNoteBox(c);
     html += `<div class="ck${sel ? " sel" : ""}" data-i="${i}"><div class="q" data-a="see">${esc(c.text)}</div><div class="acts">${acts}</div></div>`;
@@ -531,10 +533,15 @@ function ckHow(c, op) {
   h += `<button class="${t ? "" : "main"}" data-a="newLine" data-k="${sec}">${sec}に新しい行で足す:${esc(op.tooth)} ${esc(w)}</button>`;
   return h;
 }
+// AIが出した「先生が書きそうな文」。押すと入力欄に入る(そのあと直してから決定してもよい)
+function ckIdeas(c, inputId) {
+  if (!c.ideas.length) return "";
+  return `<div class="sub" style="width:100%">書きそうな文(押すと下の欄に入ります)</div>` + c.ideas.map((x) => `<button class="cand" data-a="idea" data-to="${inputId}" data-v="${esc(x)}">${esc(x)}</button>`).join("");
+}
 // 書き足す:入れた文を、欄の最後に1行足すか、選んだ行の後ろに足す(2026-11-17 確認した以外に自由記載)
 function ckNoteBox(c) {
   const secs = c.sec ? [c.sec] : KEYS;
-  let h = `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckNote" placeholder="書き足す内容(🎤で話してOK)" value="${esc((ckOpen && ckOpen.text) || "")}"></div>`;
+  let h = ckIdeas(c, "ckNote") + `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckNote" placeholder="書き足す内容(🎤で話してOK)" value="${esc((ckOpen && ckOpen.text) || "")}"></div>`;
   h += secs.map((k) => `<button class="main" data-a="noteAdd" data-k="${k}">${k}の最後に1行足す</button>`).join("");
   h += `<button data-a="noteLine">行を選んで後ろに足す</button>`;
   if (ckOpen && ckOpen.kind === "noteLine") h += `<div class="sub" style="width:100%">後ろに足す行を選んでください</div><div class="lines">${ckLines(c.sec, "noteTo")}</div>`;
@@ -616,6 +623,7 @@ $("checks").addEventListener("click", (e) => {
     else if (ckOpen.kind === "delPre") { const t = ckTargetLine(c); if (!t) return; const u = ckDelLine(t[0], t[1]); ckDone(i, "行を消した", { act: "lineDel", where: t[0] }, u); }
   }
   else if (a === "preNo") { ckOpen = null; showChecks(); }
+  else if (a === "idea") { const inp = $(b.dataset.to); if (inp) { inp.value = b.dataset.v; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.focus(); } }
   else if (a === "lineEdit") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === "lineEdit" ? null : { i, kind: "lineEdit" }; showChecks(); $("ckLineFix")?.focus(); }
   else if (a === "pickEdit" || a === "pickDel") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === a ? null : { i, kind: a }; showChecks(); }
   else if (a === "editPick") { ckOpen = { i, kind: "lineEdit", at: [b.dataset.k, +b.dataset.n] }; showChecks(); $("ckLineFix")?.focus(); }
