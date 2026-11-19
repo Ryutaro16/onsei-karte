@@ -253,7 +253,7 @@
   <label for="aiStyle">まとめ方(患者さん向けのやさしい言い方を、どこまで歯科用語にするか)</label>
   <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
   <label for="ckTapPick">確認欄の候補ボタンの押し方</label>
-  <select id="ckTapPick"><option value="two">2回押し(1回目で本文の前→後を見せて、2回目で決定)</option><option value="one">1回で決定(違ったら「やり直す」)</option></select>
+  <select id="ckTapPick"><option value="two">確かめて決定(本文の前→後を見せて、「決定」で決める)</option><option value="one">1回で決定(違ったら「やり直す」)</option></select>
   <label for="aiLength">まとめの長さ</label>
   <select id="aiLength"><option value="short">短め(大事な事実だけ。確認欄は5件まで)</option><option value="normal">ふつう</option><option value="long">詳しく(説明は選択肢ごと・指導は中身ごと)</option></select>
   <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
@@ -277,7 +277,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/19c(確認欄:行を選んで直す/消す)</p>
+    <p class="muted">版 11/19d(確かめて決定:決定ボタン)</p>
   </div>
 </dialog>
 
@@ -465,7 +465,7 @@ function showChecks() {
   const left = checkItems.filter((l) => ckParse(l).done === undefined).length;
   const two = ckTap() === "two";
   let html = `<b>貼る前に確認(${checkItems.length}件${left < checkItems.length ? `・残り${left}件` : ""}・コピーには入りません)</b>
-    <div class="ckhead"><span class="sub">項目をさわると本文の場所を青い枠で囲います</span><span class="seg cktap"><button data-a="tap" data-v="two" class="${two ? "on" : ""}">2回押し</button><button data-a="tap" data-v="one" class="${two ? "" : "on"}">1回で決定</button></span></div>`;
+    <div class="ckhead"><span class="sub">項目をさわると本文の場所を青い枠で囲います</span><span class="seg cktap"><button data-a="tap" data-v="two" class="${two ? "on" : ""}">確かめて決定</button><button data-a="tap" data-v="one" class="${two ? "" : "on"}">1回で決定</button></span></div>`;
   checkItems.forEach((line, i) => {
     const c = ckParse(line), sel = i === ckSel;
     if (c.done !== undefined) {
@@ -476,13 +476,13 @@ function showChecks() {
     let acts = "";
     const live = c.word && hasMark(c.word);
     if (live) {
-      for (const x of c.cands) if (x !== c.word) acts += `<button class="cand" data-a="cand" data-v="${esc(x)}">${op && op.kind === "pre" && op.v === x ? "決定:" : ""}${esc(x)}</button>`;
+      for (const x of c.cands) if (x !== c.word) acts += `<button class="cand" data-a="cand" data-v="${esc(x)}">${esc(x)}</button>`;
       acts += `<button class="main" data-a="ok">このままでよい</button>`;
-      if (c.from && c.from !== c.word) acts += `<button data-a="back">${op && op.kind === "pre" && op.v === c.from ? "決定:" : ""}元に戻す「${esc(c.from)}」</button>`;
+      if (c.from && c.from !== c.word) acts += `<button data-a="back">元に戻す「${esc(c.from)}」</button>`;
       acts += `<button data-a="edit">自分で直す</button>`;
       if (op && op.kind === "pre") {
         const w = ckWhere(c);
-        if (w && w[1] >= 0) { const l = ckLinesOf(w[0])[w[1]]; acts += `<div class="ckprev">${w[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del><br>→ <ins>${esc(l.replace(`〘${c.word}〙`, op.v).replace(/[〘〙]/g, ""))}</ins><br><span class="sub">もう一度押すと決定</span></div>`; }
+        if (w && w[1] >= 0) { const l = ckLinesOf(w[0])[w[1]]; acts += `<div class="ckprev">${w[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del><br>→ <ins>${esc(l.replace(`〘${c.word}〙`, op.v).replace(/[〘〙]/g, ""))}</ins><div class="acts"><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button></div></div>`; }
       }
       if (op && op.kind === "edit") acts += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckFix" value="${esc(c.word)}"><button class="main" data-a="save">決定</button></div>`;
     } else if (c.tooth) {
@@ -495,11 +495,11 @@ function showChecks() {
       // 分からない項目:このままでよい/書き足す/行を選んで直す/行を選んで消す(どの行かは先生が選ぶ。間違えてもやり直せる)
       const tl = ckTargetLine(c), t = (op && op.at) || tl, l = t ? ckLinesOf(t[0])[t[1]] : "";
       acts += `<button class="main" data-a="seen">このままでよい</button>`;
-      if (tl) acts += `<button data-a="lineEdit">この行を直す</button><button data-a="lineDel">${op && op.kind === "delPre" ? "決定:この行を消す" : "この行を消す"}</button>`;
+      if (tl) acts += `<button data-a="lineEdit">この行を直す</button><button data-a="lineDel">この行を消す</button>`;
       else acts += `<button data-a="note">書き足す</button><button data-a="pickEdit">行を選んで直す</button><button data-a="pickDel">行を選んで消す</button>`;
       if (op && op.kind === "pickEdit") acts += `<div class="sub" style="width:100%">直す行を選んでください</div><div class="lines">${ckLines(c.sec, "editPick")}</div>`;
       if (op && op.kind === "pickDel") acts += `<div class="sub" style="width:100%">消す行を選んでください(間違えても「やり直す」で戻せます)</div><div class="lines">${ckLines(c.sec, "delPick")}</div>`;
-      if (op && op.kind === "delPre" && t) acts += `<div class="ckprev">${t[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del> を消します<br><span class="sub">もう一度押すと決定</span></div>`;
+      if (op && op.kind === "delPre" && t) acts += `<div class="ckprev">${t[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del> を消します<div class="acts"><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button></div></div>`;
       if (op && op.kind === "lineEdit" && t) acts += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckLineFix" value="${esc(l.replace(/^\s*[・\-]\s*/, "").replace(/[〘〙]/g, ""))}"><button class="main" data-a="lineSave">決定</button></div>`;
     }
     if (op && (op.kind === "note" || op.kind === "noteLine")) acts += ckNoteBox(c);
@@ -603,12 +603,19 @@ $("checks").addEventListener("click", (e) => {
   else if (a === "ok") ckApply(i, c, c.word, "ok");
   else if (a === "cand" || a === "back") {
     const v = a === "cand" ? b.dataset.v : c.from;
-    if (ckTap() === "one" || (ckOpen && ckOpen.i === i && ckOpen.kind === "pre" && ckOpen.v === v)) ckApply(i, c, v, a);
-    else { ckOpen = { i, kind: "pre", v }; showChecks(); }
+    if (ckTap() === "one") ckApply(i, c, v, a);
+    else { ckOpen = { i, kind: "pre", v, act: a }; showChecks(); }
   }
   else if (a === "edit") { ckOpen = { i, kind: "edit" }; showChecks(); $("ckFix")?.focus(); }
   else if (a === "save") { const v = ($("ckFix").value || "").trim() || c.word; const u = ckReplace(c.word, v); ckDone(i, `「${v}」に直した`, { act: "edit", from: c.word, to: v }, u); }
   else if (a === "seen") ckDone(i, "このまま", { act: "seen" });
+  // 確かめて決定:前→後(消す行)を見せた下の「決定」「やめる」(2026-11-19 同じボタンを2回押す形は分かりにくいのでやめた)
+  else if (a === "preOk") {
+    if (!ckOpen || ckOpen.i !== i) return;
+    if (ckOpen.kind === "pre") ckApply(i, c, ckOpen.v, ckOpen.act);
+    else if (ckOpen.kind === "delPre") { const t = ckTargetLine(c); if (!t) return; const u = ckDelLine(t[0], t[1]); ckDone(i, "行を消した", { act: "lineDel", where: t[0] }, u); }
+  }
+  else if (a === "preNo") { ckOpen = null; showChecks(); }
   else if (a === "lineEdit") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === "lineEdit" ? null : { i, kind: "lineEdit" }; showChecks(); $("ckLineFix")?.focus(); }
   else if (a === "pickEdit" || a === "pickDel") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === a ? null : { i, kind: a }; showChecks(); }
   else if (a === "editPick") { ckOpen = { i, kind: "lineEdit", at: [b.dataset.k, +b.dataset.n] }; showChecks(); $("ckLineFix")?.focus(); }
@@ -620,7 +627,7 @@ $("checks").addEventListener("click", (e) => {
   }
   else if (a === "lineDel") {
     const t = ckTargetLine(c); if (!t) return;
-    if (ckTap() === "one" || (ckOpen && ckOpen.i === i && ckOpen.kind === "delPre")) { const u = ckDelLine(t[0], t[1]); ckDone(i, "行を消した", { act: "lineDel", where: t[0] }, u); }
+    if (ckTap() === "one") { const u = ckDelLine(t[0], t[1]); ckDone(i, "行を消した", { act: "lineDel", where: t[0] }, u); }
     else { ckOpen = { i, kind: "delPre" }; showChecks(); }
   }
   else if (a === "skip") ckDone(i, "足さない", { act: "skip" });
