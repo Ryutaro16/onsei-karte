@@ -282,7 +282,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/19f(次の段をオレンジの枠で)</p>
+    <p class="muted">版 11/19g(同じ歯をほかの項目にも・行を書き換えて足す)</p>
   </div>
 </dialog>
 
@@ -431,6 +431,18 @@ const ckTap = () => (settings.ckTap === "one" ? "one" : "two"); // 候補ボタ�
 // 確認欄をS→O→A→Pの順に(同じ欄の中はAIが書いた順)
 const CK_ORDER = { S: 0, O: 1, A: 2, P: 3 };
 function ckSort(items) { return items.map((l, j) => [l, j]).sort((a, b) => (CK_ORDER[ckParse(a[0]).sec] ?? 9) - (CK_ORDER[ckParse(b[0]).sec] ?? 9) || a[1] - b[1]).map((x) => x[0]); }
+// 直前に足した歯(済んだ項目の「6┘ を足した」「新しい行「6┘ …」」から読む。新しい順・2つまで)
+function ckRecentTeeth() {
+  const out = [];
+  for (const l of checkItems) {
+    const d = ckParse(l).done; if (!d) continue;
+    const m = d.match(/^(.+?) を足した$/) || d.match(/^新しい行「(.+?)[ 」]/) || d.match(/^行を書き換えた「(.+?)[ 」]/);
+    if (!m) continue;
+    const t = (m[1].match(TOOTH_RE) || []).join(" ");
+    if (t && !out.includes(t)) out.unshift(t);
+  }
+  return out.slice(0, 2);
+}
 function ckNext(from = -1) { // まだ済んでいない次の項目
   for (let d = 1; d <= checkItems.length; d++) { const i = (from + d) % checkItems.length; if (ckParse(checkItems[i]).done === undefined) return i; }
   return -1;
@@ -495,6 +507,8 @@ function showChecks() {
       if (op && op.kind === "edit") { stage += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckFix" value="${esc(c.word)}"><button class="main" data-a="save">決定</button></div>`; label = "書き換えて「決定」"; }
     } else if (c.tooth) {
       const picked = op && (op.kind === "how" || op.kind === "line");
+      // さっき足した歯と同じなら、歯式図を開かずに足し方へ(使うかどうかは先生が決める)
+      if (!op) for (const t of ckRecentTeeth()) acts += `<button class="cand" data-a="sameTooth" data-v="${esc(t)}">${esc(t)} と同じ</button>`;
       acts += `<button class="main" data-a="tooth">${picked ? "歯を選び直す" : "歯を選ぶ(何本でも)"}</button><button data-a="note">書き足す</button><button data-a="skip">足さない</button>`;
       if (op && op.kind === "tooth") { stage += ckChart(op.sel || []); step = `<b>① 歯を選んで「決定」</b> → ② 足し方を選ぶ`; label = "① 次はここ"; }
       if (op && op.kind === "how") { stage += ckHow(c, op); step = `① 歯を選ぶ ✓ <b>${esc(op.tooth)}</b> → <b>② 足し方を選ぶ</b>`; label = "② 次はここ"; }
@@ -536,7 +550,13 @@ function ckHow(c, op) {
   const t = ckTargetLine(c), sec = c.sec || (t && t[0]) || "O";
   const w = op.write ?? c.write ?? "";
   let h = "";
-  if (t) h += `<button class="main" data-a="toLine">この行の頭に足す:${esc(op.tooth)} ${esc(ckLinesOf(t[0])[t[1]].replace(/^\s*[・\-]?\s*/, "").replace(/[〘〙]/g, "").slice(0, 16))}…</button>`;
+  if (t) {
+    const body = ckLinesOf(t[0])[t[1]].replace(/^\s*[・\-]?\s*/, "").replace(/[〘〙]/g, "");
+    h += `<button class="main" data-a="toLine">この行の頭に足す:${esc(op.tooth)} ${esc(body.slice(0, 16))}…</button>`;
+    // 元の行を書き換えて足す(書き足したいことがあるとき。新しい行は増えない)
+    const v = op.rewrite ?? `${op.tooth} ${body}`;
+    h += `<div class="sub" style="width:100%">この行を書き換えて足す(書き足してから「決定」)</div><div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckToothRewrite" value="${esc(v)}"><button data-a="toothRewrite">決定</button></div>`;
+  }
   h += `<button data-a="pickLine">ほかの行を選ぶ</button>`;
   h += `<div style="display:flex;gap:6px;width:100%;align-items:center"><span>${esc(op.tooth)}</span><input class="fix" id="ckNewLine" value="${esc(w)}" placeholder="新しい行で書く"></div>`;
   h += `<button class="${t ? "" : "main"}" data-a="newLine" data-k="${sec}">${sec}に新しい行で足す:${esc(op.tooth)} ${esc(w)}</button>`;
@@ -651,8 +671,15 @@ $("checks").addEventListener("click", (e) => {
   else if (a === "tooth") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === "tooth" ? null : { i, kind: "tooth", sel: [] }; showChecks(); }
   else if (a === "t") { const s = ckOpen.sel || [], t = b.dataset.v; ckOpen.sel = s.includes(t) ? s.filter((x) => x !== t) : [...s, t]; showChecks(); }
   else if (a === "tClear") { ckOpen.sel = []; showChecks(); }
+  else if (a === "sameTooth") { ckOpen = { i, kind: "how", tooth: b.dataset.v }; showChecks(); }
   else if (a === "tOk") { const tooth = CK_T_ORDER.filter((t) => (ckOpen.sel || []).includes(t)).join(" "); ckOpen = { i, kind: "how", tooth }; showChecks(); }
   else if (a === "toLine") { const t = ckTargetLine(c); const u = ckAddTooth(t[0], t[1], ckOpen.tooth); ckDone(i, `${ckOpen.tooth} を足した`, { act: "tooth", to: ckOpen.tooth }, u); }
+  else if (a === "toothRewrite") {
+    const t = ckTargetLine(c); if (!t) return;
+    const v = ($("ckToothRewrite").value || "").trim(); if (!v) return;
+    const pre = (ckLinesOf(t[0])[t[1]].match(/^\s*[・\-]?\s*/) || [""])[0] || "・";
+    const u = ckSetLine(t[0], t[1], pre + v); ckDone(i, `行を書き換えた「${v}」`, { act: "toothRewrite", to: v, where: t[0] }, u);
+  }
   else if (a === "pickLine") { ckOpen = { ...ckOpen, kind: "line" }; showChecks(); }
   else if (a === "line") { const u = ckAddTooth(b.dataset.k, +b.dataset.n, ckOpen.tooth); ckDone(i, `${ckOpen.tooth} を足した`, { act: "tooth", to: ckOpen.tooth }, u); }
   else if (a === "newLine") {
@@ -670,6 +697,7 @@ $("checks").addEventListener("click", (e) => {
 });
 $("checks").addEventListener("input", (e) => {
   if (e.target.id === "ckNote" && ckOpen) ckOpen.text = e.target.value;
+  if (e.target.id === "ckToothRewrite" && ckOpen) ckOpen.rewrite = e.target.value;
   if (e.target.id === "ckNewLine" && ckOpen) { ckOpen.write = e.target.value; const b = $("checks").querySelector('[data-a="newLine"]'); if (b) b.textContent = `${b.dataset.k}に新しい行で足す:${ckOpen.tooth} ${ckOpen.write}`; }
 });
 $("checks").addEventListener("keydown", (e) => {
