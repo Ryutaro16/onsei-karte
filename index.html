@@ -9,15 +9,37 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <style>
-  :root { --ink:#1f2933; --sub:#5b6773; --line:#d9dee3; --bg:#f6f7f9; --card:#fff; --acc:#0b6bcb; --acc-ink:#fff; --note-bg:#eef3f8; --note-line:#c9d6e3; --ng:#c0392b; }
+  /* 2026-11-20 色を「落ち着いた紺＋控えめな金」にそろえた。色はすべてこの変数から(明るい画面/暗い画面) */
+  :root {
+    --ink:#1b2430; --sub:#5f6b7a; --line:#dde2e8; --bg:#f4f5f7; --card:#fff; --soft:#f0f3f7;
+    --acc:#1f3a64; --acc-ink:#fff; --acc-text:#1f3a64; --acc-soft:#e6ecf5;
+    --gold:#a8822e; --gold-line:#c9a54e; --gold-soft:#faf3e1; --gold-ink:#6b5216;
+    --guess:#f2d98b; --guess-ink:#1b2430;
+    --ok:#2f7d5b; --ok-soft:rgba(47,125,91,.16);
+    --ng:#b23b3b; --rec:#a8323a;
+    --note-bg:#f0f3f7; --note-line:#dde2e8;
+    --shadow:0 1px 2px rgba(20,30,50,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:#e8ebf0; --sub:#9aa4b2; --line:#2e3646; --bg:#11151d; --card:#1a202b; --soft:#202837;
+      --acc:#3a5a8f; --acc-ink:#fff; --acc-text:#a9c1ea; --acc-soft:#243250;
+      --gold:#d4b25e; --gold-line:#b8954a; --gold-soft:#2a2516; --gold-ink:#e6cf8f;
+      --guess:#e9cf7e; --guess-ink:#1b2430;
+      --ok:#5fb88d; --ok-soft:rgba(95,184,141,.2);
+      --ng:#ef8a80; --rec:#b8414a;
+      --note-bg:#1f2633; --note-line:#2e3646;
+      --shadow:none;
+    }
+  }
   * { box-sizing:border-box; }
   body { margin:0; font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif; color:var(--ink); background:var(--bg); line-height:1.6; font-size:17px; -webkit-text-size-adjust:100%; }
   main { max-width:820px; margin:0 auto; padding:12px 16px 40px; padding-top:max(12px, env(safe-area-inset-top)); }
-  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-  h1 { font-size:20px; margin:0; white-space:nowrap; }
-  header > div { display:flex; flex-wrap:nowrap; }
-  header .link { padding:8px 5px; white-space:nowrap; }
-  button { font:inherit; color:inherit; cursor:pointer; border-radius:10px; border:1px solid var(--line); background:var(--card); padding:10px 16px; min-height:44px; }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:6px; }
+  h1 { font-size:19px; margin:0; white-space:nowrap; letter-spacing:.02em; color:var(--acc-text); }
+  header > div { display:flex; flex-wrap:nowrap; gap:4px; }
+  header .link { padding:6px 9px; white-space:nowrap; border:1px solid var(--line); border-radius:999px; background:var(--card); color:var(--ink); font-size:13px; min-height:34px; }
+  button { font:inherit; color:inherit; cursor:pointer; border-radius:10px; border:1px solid var(--line); background:var(--card); padding:10px 16px; min-height:44px; -webkit-tap-highlight-color:transparent; }
   button.main { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
   button:disabled { opacity:.45; cursor:default; }
   .link { border:none; background:none; color:var(--sub); padding:8px; font-size:15px; }
@@ -26,64 +48,109 @@
   .mode button { flex:1; font-size:15px; touch-action:manipulation; }
   .mode button.on { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
   .mode small { display:block; font-size:12px; font-weight:400; }
-  textarea { width:100%; font:inherit; font-size:17px; color:var(--ink); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; resize:vertical; line-height:1.6; }
-  #input { min-height:32vh; }
-  .hint { color:var(--sub); font-size:14px; display:flex; justify-content:space-between; gap:8px; margin:4px 2px 0; }
+  textarea { width:100%; font:inherit; font-size:17px; color:var(--ink); background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; resize:vertical; line-height:1.6; }
+  textarea:focus, input:focus, select:focus { outline:2px solid var(--acc-text); outline-offset:-1px; }
+  #input { min-height:30vh; }
+  .hint { color:var(--sub); font-size:13px; display:flex; justify-content:space-between; gap:8px; margin:4px 2px 0; }
   .row-btns { display:flex; gap:10px; margin:12px 0; flex-wrap:wrap; }
   .row-btns .main { flex:1; }
   #status { color:var(--sub); font-size:15px; min-height:1.6em; }
   #status.err { color:var(--ng); font-weight:700; }
-  .notice { background:var(--note-bg); border:1px solid var(--note-line); border-radius:10px; padding:10px 12px; margin:10px 0; font-size:15px; }
+  .notice { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin:10px 0; font-size:15px; box-shadow:var(--shadow); }
   .notice ul { margin:4px 0 0; padding-left:1.2em; }
-  /* 確認欄:さわって直す(2026-11-17) */
-  .ck { border-top:1px solid var(--note-line); padding:8px 0; }
+
+  /* 手順の目印(初めての人向け):録音 → まとめる → 確認 → コピー */
+  .steps { display:flex; gap:4px; margin:0 0 10px; font-size:12px; color:var(--sub); }
+  .steps span { flex:1; text-align:center; padding:4px 0; border-bottom:3px solid var(--line); white-space:nowrap; }
+  .steps span.on { color:var(--acc-text); font-weight:700; border-bottom-color:var(--gold-line); }
+  .steps span.done { color:var(--sub); border-bottom-color:var(--acc); }
+
+  /* まとめの設定(まとめ方・長さ・AI)を1枚にまとめる */
+  .opts { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:6px 10px 8px; margin:10px 0 0; box-shadow:var(--shadow); }
+  .styleline { display:grid; grid-template-columns:5.2em 1fr; align-items:center; gap:2px 8px; margin:4px 0 0; font-size:13px; color:var(--sub); }
+  .styleline > span:first-child { font-weight:700; color:var(--ink); font-size:13px; }
+  .styleline .seg { width:100%; display:flex; }
+  .styleline .seg button { flex:1; min-height:34px; font-size:13px; padding:2px 4px; }
+  .styleline > span:last-child { grid-column:2; font-size:12px; min-height:0; }
+  .styleline > span:last-child:empty { display:none; }
+
+  /* 確認欄:さわって直す */
+  .ck { border-top:1px solid var(--line); padding:9px 0; }
   .ck:first-of-type { border-top:none; }
-  .ck.done { opacity:.55; }
-  .ck.hl { background:rgba(255,216,74,.35); border-radius:8px; }
-  .ck .q { font-size:15px; }
-  .ck .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-  .ck .acts button { min-height:34px; font-size:14px; padding:3px 10px; }
-  .ck .acts button.cand { border-color:var(--acc, #0a66c2); color:var(--acc, #0a66c2); }
-  .ck .acts button.main { font-weight:700; }
-  .ck .q { cursor:pointer; }
-  .ck.sel { background:rgba(10,102,194,.10); border-radius:8px; padding-left:6px; padding-right:6px; }
-  .ck.done .q { opacity:.55; }
-  .ck .acts button.undo { min-height:28px; font-size:13px; padding:2px 8px; }
-  .ckhead { display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; font-size:13px; margin:2px 0 4px; }
-  .ckhead .seg button { min-height:28px; font-size:12px; padding:2px 8px; }
-  .ckstep { font-size:13px; color:var(--sub); margin:4px 0 0; } .ckstep b { color:var(--ink); }
-  .ckstage { margin-top:8px; border:2px solid #e8890c; border-radius:10px; padding:8px; background:#fff8ee; }
-  .cknext { display:inline-block; font-size:12px; font-weight:700; color:#fff; background:#e8890c; border-radius:8px; padding:1px 8px; }
+  .ck.hl { background:var(--gold-soft); border-radius:8px; }
+  .ck .q { font-size:15px; cursor:pointer; line-height:1.5; }
+  .ck .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; align-items:center; }
+  .ck .acts button { min-height:36px; font-size:14px; padding:3px 12px; border-radius:9px; background:var(--card); color:var(--ink); border-color:var(--line); }
+  .ck .acts button.main { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
+  .ck .acts button.cand { border-color:var(--acc-text); color:var(--acc-text); background:var(--card); }
   .ck .acts button.dim { color:var(--sub); font-weight:400; }
-    .ckprev { width:100%; font-size:14px; background:var(--card); border-radius:8px; padding:6px 8px; }
-  .ckprev del { color:var(--sub); } .ckprev ins { text-decoration:none; color:var(--ok, #1f8a5b); font-weight:700; }
-  .ckhl { outline:2px solid var(--acc, #0a66c2); background:rgba(10,102,194,.14); border-radius:4px; }
+  .ck .acts button.picked { background:var(--acc-soft); color:var(--acc-text); border-color:var(--acc-text); border-width:2px; font-weight:700; }
+  .ck .sub, .ckcap { width:100%; font-size:12px; color:var(--sub); margin-top:4px; font-weight:700; letter-spacing:.02em; }
+  .ckin { margin:0 8px 10px 52px; padding:4px 12px; background:var(--soft); border:1px solid var(--line); border-radius:12px; font-size:15px; }
+  .ckin-h { font-size:12px; font-weight:700; color:var(--sub); padding-top:4px; }
+  .ckchips { display:flex; flex-wrap:wrap; gap:6px; } .ckchips button { min-height:32px; font-size:13px; padding:2px 12px; border-radius:999px; }
+  /* 選んでいる項目:金の縁+淡い金の背景+「いまここ」。本文の場所も同じ金の枠 */
+  .ck.sel { background:var(--gold-soft); border-radius:10px; padding:10px; margin:6px -6px; border:1.5px solid var(--gold-line); }
+  .ck.sel + .ck { border-top:none; }
+  .ck.sel .q { font-weight:700; }
+  .cknow { display:inline-block; font-size:11px; font-weight:700; background:var(--gold-line); color:#fff; border-radius:999px; padding:1px 9px; margin-bottom:4px; letter-spacing:.05em; }
+  .ck.done { padding:6px 0; }
+  .ck.done .acts { margin-top:0; }
+  .ck.done .q { color:var(--sub); font-size:14px; flex:1; min-width:0; }
+  .ck.done .q .sub { display:inline; width:auto; font-weight:400; margin:0; }
+  .ck .acts button.undo { min-height:30px; font-size:13px; padding:2px 10px; color:var(--acc-text); background:none; border-color:var(--line); }
+  .ckhead { display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; font-size:13px; margin:6px 0 2px; }
+  .ckstep { font-size:14px; color:var(--sub); margin:6px 0 0; } .ckstep b { color:var(--ink); }
+  .ckstage { margin-top:8px; border:1.5px solid var(--gold-line); border-radius:10px; padding:8px; background:var(--card); }
+  .cknext { display:inline-block; font-size:11px; font-weight:700; color:#fff; background:var(--gold-line); border-radius:999px; padding:1px 9px; }
+  .ckdecide { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px; padding-top:8px; border-top:1px dashed var(--gold-line); }
+  .ckdecide .t { font-size:13px; font-weight:700; color:var(--gold-ink); margin-right:auto; }
+  .ckdecide .t:empty { display:none; }
+  .ckdecide .t del { color:var(--sub); font-weight:400; }
+  .ckdecide button { min-height:40px; font-size:15px; padding:4px 16px; border-radius:9px; background:var(--card); color:var(--ink); border-color:var(--line); }
+  .ckdecide button.main { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
+  .ckdecide button { flex:1 1 0; white-space:nowrap; }
+  .ckdecide button[data-a="tryOther"] { flex:1 1 100%; min-height:34px; font-size:13px; color:var(--acc-text); background:none; }
+  .ckprev { width:100%; font-size:14px; background:var(--card); border-radius:8px; padding:6px 8px; }
+  .ckprev del { color:var(--sub); } .ckprev ins { text-decoration:none; color:var(--ok); font-weight:700; }
+  .ckhl { outline:2px solid var(--gold-line); background:rgba(201,165,78,.16); border-radius:4px; }
   .ckhl.flash { animation:ckFlash 1.3s ease-out; } .ckhl.only { outline:none; }
-  @keyframes ckFlash { from { background:#9ee6b5; } to { background:transparent; } }
-  .sec.ckbox .body { box-shadow:inset 0 0 0 2px var(--acc, #0a66c2); background:rgba(10,102,194,.06); }
+  .ckhl.cktry { outline:2px solid var(--ok); background:var(--ok-soft); }
+  @keyframes ckFlash { from { background:var(--ok-soft); } to { background:transparent; } }
+  .sec.ckbox .body { box-shadow:inset 0 0 0 2px var(--gold-line); background:rgba(201,165,78,.08); }
   /* 歯式図:上下・左右が一目で分かる形。十字の線で4つに分ける */
   .ckchart { width:calc(100% + 16px); margin:4px -8px 0; }
   .ckchart .lr { display:flex; justify-content:space-between; font-size:12px; color:var(--sub); padding:0 2px; }
   .ckchart .jaw { display:grid; grid-template-columns:repeat(8, 1fr) 3px repeat(8, 1fr); gap:1px; }
-  .ckchart .jaw.up { padding-bottom:4px; border-bottom:3px solid var(--ink); }
+  .ckchart .jaw.up { padding-bottom:4px; border-bottom:2px solid var(--sub); }
   .ckchart .jaw.lo { padding-top:4px; }
-  .ckchart .mid { background:var(--ink); border-radius:2px; }
-  .ckchart .jaw button { padding:0; min-width:0; min-height:46px; font-size:16px; font-weight:700; border-radius:10px 10px 6px 6px; }
+  .ckchart .mid { background:var(--sub); border-radius:2px; }
+  .ckchart .jaw button { padding:0; min-width:0; min-height:46px; font-size:16px; font-weight:700; border-radius:10px 10px 6px 6px; background:var(--card); color:var(--ink); border-color:var(--line); }
   .ckchart .jaw.lo button { border-radius:6px 6px 10px 10px; }
-  .ckchart .jaw button.on { background:var(--acc, #0a66c2); color:#fff; border-color:var(--acc, #0a66c2); }
-  .ckchart .picked { font-size:15px; margin:6px 0 2px; } .ckchart .picked b { color:var(--acc, #0a66c2); }
+  .ckchart .jaw button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .ckchart .picked { font-size:15px; margin:6px 0 2px; } .ckchart .picked b { color:var(--acc-text); }
   .ck .lines { display:flex; flex-direction:column; gap:4px; width:100%; }
   .ck .lines button { text-align:left; }
-  .ck input.fix { font-size:16px; padding:4px 6px; flex:1; min-width:8em; }
-  .soap { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card); }
+  .ck input.fix { font-size:16px; padding:6px 8px; flex:1; min-width:8em; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
+  .fixrow { display:flex; gap:6px; width:100%; align-items:center; }
+
+  /* SOAP本文 */
+  .soap { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); box-shadow:var(--shadow); }
   .sec { display:flex; border-top:1px solid var(--line); }
-  .sec:first-child { border-top:none; }
-  .sec .k { flex:0 0 40px; background:#eef3f8; font-weight:700; display:flex; justify-content:center; padding-top:12px; }
-  .sec .body { flex:1; min-width:0; min-height:3em; padding:12px; white-space:pre-wrap; word-break:break-word; outline:none; line-height:1.6; }
-  .sec .body:focus { box-shadow:inset 0 0 0 2px var(--acc); }
-  /* 推測して直した言葉:蛍光ペンで塗ったように(暗い画面でも同じ黄色) */
-  mark.guess { background:#ffd84a; color:#1f2933; border-radius:4px; padding:0 2px; -webkit-box-decoration-break:clone; box-decoration-break:clone; }
-  .legend mark { font-size:14px; }
+  .sec:first-child, .ckin + .sec { border-top:1px solid var(--line); }
+  .soap > .sec:first-of-type { border-top:none; }
+  .sec .k { flex:0 0 44px; background:var(--soft); font-weight:700; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:10px; color:var(--acc-text); font-size:18px; }
+  .sec .k .kcopy { min-height:0; padding:3px 0; width:38px; font-size:10px; font-weight:400; border-radius:6px; color:var(--sub); background:var(--card); letter-spacing:-.02em; }
+  .sec .body { flex:1; min-width:0; min-height:3em; padding:10px 12px; white-space:pre-wrap; word-break:break-word; outline:none; line-height:1.65; }
+  .sec .body:focus { box-shadow:inset 0 0 0 2px var(--acc-text); }
+  /* 推測して直した言葉:控えめな金の蛍光ペン(暗い画面でも同じ色) */
+  mark.guess { background:var(--guess); color:var(--guess-ink); border-radius:4px; padding:0 2px; -webkit-box-decoration-break:clone; box-decoration-break:clone; }
+  .legend { font-size:13px; color:var(--sub); }
+  .legend mark { font-size:13px; }
+  details.help { font-size:13px; color:var(--sub); margin-top:4px; }
+  details.help summary { cursor:pointer; list-style:none; color:var(--acc-text); display:inline; }
+  details.help summary::-webkit-details-marker { display:none; }
+  details.help p { margin:4px 0 0; }
   .rec-box { margin-bottom:10px; }
   .rec-box .row-btns { margin:0 0 6px; }
   #cancelRec { flex:1; }
@@ -91,19 +158,20 @@
   .relay-code { font-size:44px; font-weight:700; letter-spacing:6px; text-align:center; margin:10px 0 4px; font-variant-numeric:tabular-nums; }
   .relay-left { text-align:center; color:var(--sub); font-size:14px; }
   .relay-state { text-align:center; font-size:16px; margin:10px 0; }
-  .relay-state.ok { color:var(--ok, #1f8a5b); font-weight:700; }
+  .relay-state.ok { color:var(--ok); font-weight:700; }
   .relay-item { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; }
   .relay-item .ri-head { font-weight:700; }
   .relay-item .ri-text { color:var(--sub); font-size:14px; margin:4px 0 8px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   .relay-item button { width:100%; }
-  button.rec { flex:2; background:#c0392b; border-color:#c0392b; color:#fff; font-weight:700; }
-  button.rec.on { background:#fff; color:#c0392b; animation:blink 1.6s infinite; }
+  button.rec { flex:2; background:var(--rec); border-color:var(--rec); color:#fff; font-weight:700; min-height:52px; font-size:18px; border-radius:12px; }
+  button.rec.on { background:var(--card); color:var(--rec); border:2px solid var(--rec); animation:blink 1.6s infinite; }
   @keyframes blink { 50% { opacity:.6; } }
-  .sec .c { flex:0 0 auto; padding:6px; }
-  .sec .c button { font-size:14px; padding:6px 10px; min-height:36px; }
-  .meta { color:var(--sub); font-size:13px; margin-top:6px; text-align:right; }
-  .cost { max-width:320px; margin-left:auto; }
+  #run { min-height:52px; font-size:18px; border-radius:12px; }
+  .meta { color:var(--sub); font-size:12px; margin-top:6px; }
+  .cost { max-width:340px; margin-left:auto; }
   .cost div { display:flex; justify-content:space-between; gap:14px; }
+  .cost div span:first-child { min-width:0; }
+  .cost div span:last-child { white-space:nowrap; }
   .cost .sum { border-top:1px solid var(--line); padding-top:3px; margin-top:3px; font-weight:700; color:var(--ink); }
   .cost .note { justify-content:flex-end; font-size:11px; }
   .usage-line { margin:28px 0 0; padding-top:10px; border-top:1px solid var(--line); color:var(--sub); font-size:13px; text-align:center; }
@@ -120,34 +188,34 @@
   details.month .cost { font-size:14px; }
   details.month h5 { margin:10px 0 2px; font-size:13px; color:var(--ink); }
   #exportCsv { width:100%; margin-top:10px; }
-  /* 節約モード(まとめのAIを Sonnet に)の小さなスイッチ。ふだんはオフ */
   .ailine { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:8px 2px 0; font-size:12px; color:var(--sub); }
   .aiswitch { appearance:none; -webkit-appearance:none; width:40px; height:22px; min-height:0; margin:0; padding:0; border-radius:11px; background:var(--line); position:relative; cursor:pointer; flex:none; transition:background .15s; border:none; }
   .aiswitch::after { content:""; position:absolute; left:2px; top:2px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.3); transition:left .15s; }
-  .aiswitch:checked { background:#1e88ff; }
+  .aiswitch:checked { background:var(--acc); }
   .aiswitch:checked::after { left:20px; }
-  .ailine.on #aiLbl { color:#1e88ff; font-weight:700; font-size:14px; }
+  .ailine.on #aiLbl { color:var(--acc-text); font-weight:700; font-size:14px; }
   .ailine.on #aiNote, #aiLine.on #aiNote { color:var(--ng); }
-  #run.eco::after { content:"💰節約"; display:inline-block; background:#fff; color:#0b6bcb; font-size:12px; font-weight:700; border-radius:8px; padding:2px 7px; margin-left:6px; vertical-align:2px; }
+  #run.eco::after { content:"節約"; display:inline-block; background:rgba(255,255,255,.18); color:#fff; font-size:11px; font-weight:700; border:1px solid rgba(255,255,255,.5); border-radius:999px; padding:0 8px; margin-left:8px; vertical-align:2px; }
   .hist-day { margin:14px 0 4px; font-size:14px; color:var(--sub); font-weight:700; }
   .hist-item { border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin:6px 0; }
-  .hist-item.cur { border-color:var(--acc); }
+  .hist-item.cur { border-color:var(--acc-text); }
   .hist-item .top { display:flex; justify-content:space-between; gap:8px; font-size:13px; color:var(--sub); }
   .hist-item .txt { font-size:15px; margin:2px 0 6px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; word-break:break-all; }
   .hist-item .row-btns { margin:0; gap:8px; }
   .hist-item .row-btns button { flex:1; font-size:14px; padding:6px 10px; min-height:38px; }
-  #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:#1f2933; color:#fff; padding:10px 18px; border-radius:20px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; }
-  #toast.show { opacity:.92; }
-  dialog { border:1px solid var(--line); border-radius:14px; padding:16px; max-width:min(92vw, 480px); width:100%; color:var(--ink); background:var(--card); }
-  dialog label { display:block; font-size:15px; margin:10px 0 4px; }
-  dialog input, dialog select { width:100%; font:inherit; font-size:17px; padding:10px; border:1px solid var(--line); border-radius:8px; }
+  #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:#1b2430; color:#fff; padding:10px 18px; border-radius:20px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  #toast.show { opacity:.94; }
+  dialog { border:1px solid var(--line); border-radius:16px; padding:16px; max-width:min(92vw, 480px); width:100%; color:var(--ink); background:var(--card); }
+  dialog::backdrop { background:rgba(10,15,25,.45); }
+  dialog label { display:block; font-size:14px; font-weight:700; margin:12px 0 4px; }
+  dialog input, dialog select { width:100%; font:inherit; font-size:16px; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
   dialog .muted { color:var(--sub); font-size:13px; }
   /* 歯の番号(歯式):さわると選んで直せる。話した言葉と合わない番号はオレンジ */
-  .tooth { border-bottom:2px dotted var(--acc); border-radius:3px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
-  .tooth.warn { background:#ff8a4c40; border-bottom:2px solid #e8590c; }
+  .tooth { border-bottom:2px dotted var(--acc-text); border-radius:3px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .tooth.warn { background:rgba(214,110,40,.22); border-bottom:2px solid #d0632a; }
   .tooth.flash { animation:toothFlash 1.4s ease-out; }
-  @keyframes toothFlash { 0% { background:#4caf6a; color:#fff; } 100% { background:transparent; } }
-  .notice.tooth-warn { background:#fff3e8; border-color:#f3b98a; }
+  @keyframes toothFlash { 0% { background:var(--ok); color:#fff; } 100% { background:transparent; } }
+  .notice.tooth-warn { background:rgba(214,110,40,.08); border-color:rgba(214,110,40,.45); }
   .tooth-warn ul { list-style:none; padding:0; }
   .tooth-warn li { margin:6px 0; }
   .tooth-warn button { min-height:36px; padding:4px 12px; font-size:15px; margin-left:4px; background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
@@ -156,46 +224,76 @@
   .tp-opts button { padding:6px 0; min-height:0; line-height:1.3; }
   .tp-opts button b { display:block; font-size:22px; }
   .tp-opts button small { font-size:12px; color:var(--sub); }
-  .tp-opts button.said { border:2px solid #e8590c; }
-  .tp-opts button.said small { color:#e8590c; font-weight:700; }
+  .tp-opts button.said { border:2px solid #d0632a; }
+  .tp-opts button.said small { color:#d0632a; font-weight:700; }
   .tp-row { display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; margin:8px 0 4px; }
-  .styleline { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:8px 2px 0; font-size:12px; color:var(--sub); }
-  .styleline .seg button { min-height:30px; font-size:13px; padding:2px 9px; }
-  .rate { margin:14px 0 0; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; font-size:13px; color:var(--sub); }
+  details.rate { margin:14px 0 0; padding:8px 12px; border:1px solid var(--line); border-radius:12px; font-size:13px; color:var(--sub); background:var(--card); }
+  details.rate > summary { cursor:pointer; list-style:none; color:var(--ink); font-size:14px; }
+  details.rate > summary::-webkit-details-marker { display:none; }
+  details.rate > summary::before { content:"▸ "; color:var(--sub); }
+  details.rate[open] > summary::before { content:"▾ "; }
+  details.rate > summary .rated { color:var(--acc-text); font-weight:700; margin-left:6px; }
   .rate .row { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-  .rate button { min-height:34px; padding:3px 10px; font-size:14px; border-radius:17px; background:none; color:var(--ink); border:1px solid var(--line); }
+  .rate button { min-height:34px; padding:3px 12px; font-size:14px; border-radius:999px; background:var(--card); color:var(--ink); border:1px solid var(--line); }
   .rate button.on { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
   .rate .why button { font-size:13px; min-height:30px; }
   .rate textarea { width:100%; min-height:40px; height:44px; margin-top:6px; font-size:15px; box-sizing:border-box; }
   .cmp { margin:0 0 10px; font-size:13px; color:var(--sub); }
   .cmp .seg { margin-right:8px; vertical-align:middle; }
-  .cmp .link { padding:4px 0; font-size:14px; color:var(--acc); text-decoration:underline; }
-  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .cmp .link { padding:4px 0; font-size:14px; color:var(--acc-text); text-decoration:underline; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; background:var(--card); }
   .seg button { border:0; border-radius:0; min-height:34px; padding:4px 10px; font-size:14px; background:none; color:var(--sub); }
+  .seg button + button { border-left:1px solid var(--line); }
   .seg button.on { background:var(--acc); color:var(--acc-ink); font-weight:700; }
   .tp-q { display:flex; justify-content:space-between; font-size:12px; color:var(--sub); margin:2px 2px; }
   .tp-chart { display:grid; grid-template-columns:repeat(8,1fr) 3px repeat(8,1fr); gap:2px; }
   .tp-chart button { min-height:38px; padding:0; font-size:15px; border-radius:6px; position:relative; min-width:0; }
   .tp-chart button.cur { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); font-weight:700; }
-  .tp-chart button.used::after { content:""; position:absolute; right:2px; top:2px; width:6px; height:6px; border-radius:50%; background:#f0b400; }
+  .tp-chart button.used::after { content:""; position:absolute; right:2px; top:2px; width:6px; height:6px; border-radius:50%; background:var(--gold-line); }
   .tp-chart .mid { background:var(--sub); border-radius:2px; }
   .tp-chart .hr { grid-column:1/-1; height:3px; background:var(--sub); border-radius:2px; margin:2px 0; }
+  .copybar .main small { display:block; font-size:12px; font-weight:400; opacity:.85; }
+  #count { white-space:nowrap; }
+  .styleline .seg button { white-space:nowrap; }
+  /* 確認欄は本文の下に、左の細い線でつなぐ(箱を重ねない) */
+  .ckin { margin:0 10px 12px 54px; padding:0 0 0 10px; background:none; border:none; border-left:2px solid var(--line); border-radius:0; }
+  .ck.sel { margin:6px 0; }
+  /* 選んでいない項目はたたむ(1行だけ。さわると開く) */
+  .ck.fold .q { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; color:var(--ink); }
+  .ck.fold .chev { flex:none; font-size:12px; color:var(--acc-text); border:1px solid var(--line); border-radius:999px; padding:1px 9px; margin-top:1px; white-space:nowrap; }
+  .sgrp { margin:18px 0 0; padding-top:10px; border-top:1px solid var(--line); font-size:12px; font-weight:700; color:var(--gold); letter-spacing:.08em; }
+  .sgrp:first-of-type { border-top:none; padding-top:0; margin-top:10px; }
+  dialog .lab-note { font-size:12px; color:var(--sub); margin:-2px 0 4px; }
+  details.opts > summary { list-style:none; display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--sub); padding:4px 0; }
+  details.opts > summary::-webkit-details-marker { display:none; }
+  details.opts > summary .ot { font-weight:700; color:var(--ink); white-space:nowrap; }
+  details.opts > summary #optsNow { flex:1; min-width:0; }
+  details.opts > summary #optsNow em { font-style:normal; color:var(--ng); display:block; font-size:12px; line-height:1.3; }
+  details.opts > summary .oc { color:var(--acc-text); border:1px solid var(--line); border-radius:999px; padding:1px 10px; white-space:nowrap; }
+  details.opts[open] > summary .oc { visibility:hidden; }
+  .cklegend { font-size:12px; color:var(--sub); margin-top:6px; line-height:1.7; }
+  .cklegend i { font-style:normal; display:inline-block; width:10px; height:10px; border-radius:3px; vertical-align:-1px; margin:0 3px 0 6px; }
+  .cklegend i:first-child { margin-left:0; }
+  .ck .acts button.dim { color:var(--ink); font-weight:400; opacity:.8; }
+  .ck .acts button.picked { background:var(--acc-soft); color:var(--acc-text); border:2px solid var(--acc-text); font-weight:700; }
+  .ck .acts button.picked::before { content:"✓ "; }
+  .ck .acts button[data-a="lineDel"], .ck .acts button[data-a="pickDel"] { color:var(--ng); }
+  .ckdecide .after { flex:1 1 100%; font-size:12px; color:var(--sub); }
+  .ck.done .q .sub { color:var(--sub); font-size:13px; }
+  .ck.done .q { color:var(--ink); }
+  .ck.done .q .ok { color:var(--ok); font-weight:700; margin-right:4px; }
+  .sec .k .kcopy { color:var(--acc-text); font-size:11px; }
+  @media (max-width:560px) { .ckin { margin-left:12px; } .ck.sel { padding:10px 8px; } .ckchart { width:calc(100% + 12px); margin:4px -6px 0; } .ckchart .jaw button { min-height:50px; } }
   [hidden] { display:none !important; }
-  @media (prefers-color-scheme: dark) {
-    .ckstage { background:#33270f; }
-    :root { --ink:#e6e9ec; --sub:#9aa5b1; --line:#3a424a; --bg:#15191d; --card:#1f252b; --note-bg:#26303a; --note-line:#3d4b59; --ng:#ff7b6b; }
-    .sec .k { background:#26303a; }
-    .tooth { border-bottom-color:#6ea8ff; }
-    .notice.tooth-warn { background:#3a2416; border-color:#7a4a2a; }
-  }
 </style>
 </head>
 <body>
 <main>
   <header>
     <h1>音声カルテ要約</h1>
-    <div><button class="link" id="openRelay">📥受取</button><button class="link" id="openHistory">🕘履歴</button><button class="link" id="openSettings">⚙設定</button></div>
+    <div><button class="link" id="openRelay">受取</button><button class="link" id="openHistory">履歴</button><button class="link" id="openSettings">設定</button></div>
   </header>
+  <div class="steps" id="steps" aria-hidden="true"><span>① 録音</span><span>② まとめる</span><span>③ 確認</span><span>④ コピー</span></div>
 
   <div id="recBox" class="rec-box">
     <div class="row-btns">
@@ -208,9 +306,12 @@
 
   <textarea id="input" placeholder="ここをタップして、キーボードの🎤で話してください(Macは fn キーを2回)。&#10;例:右下6番、3日前から冷たいものがしみる。打診マイナス…"></textarea>
   <div class="hint"><span id="inputHint">聞き間違いはそのままでOK(AIが直します)。患者さんの名前は話さないでください。</span><span id="count">0字</span></div>
+  <details class="opts" id="optsBox">
+  <summary><span class="ot">まとめの設定</span><span id="optsNow"></span><span class="oc">変える</span></summary>
   <div class="styleline"><span>まとめ方</span><span class="seg" id="stylePick"><button data-v="plain">言い換えない</button><button data-v="terms">用語だけ</button><button data-v="full">病名まで</button></span><span id="styleNote"></span></div>
   <div class="styleline"><span>長さ</span><span class="seg" id="lengthPick"><button data-v="short">短め</button><button data-v="normal">ふつう</button><button data-v="long">詳しく</button></span><span id="lengthNote"></span></div>
   <div class="styleline" id="aiLine"><span>まとめのAI</span><span class="seg" id="aiSeg"><button data-v="opus">Opus</button><button data-v="sonnet">Sonnet</button><button data-v="haiku">Haiku</button></span><span id="aiNote"></span></div>
+  </details>
 
   <div class="row-btns">
     <button class="main" id="run">SOAPにまとめる</button>
@@ -223,22 +324,28 @@
     <div class="notice" id="checks" hidden></div>
     <div class="notice tooth-warn" id="toothWarn" hidden></div>
     <div class="soap" id="soap">
-      <div class="sec"><div class="k">S</div><div class="body" data-k="S"></div><div class="c"><button data-copy="S">コピー</button></div></div>
-      <div class="sec"><div class="k">O</div><div class="body" data-k="O"></div><div class="c"><button data-copy="O">コピー</button></div></div>
-      <div class="sec"><div class="k">A</div><div class="body" data-k="A"></div><div class="c"><button data-copy="A">コピー</button></div></div>
-      <div class="sec"><div class="k">P</div><div class="body" data-k="P"></div><div class="c"><button data-copy="P">コピー</button></div></div>
+      <div class="ckin" data-k="" hidden></div>
+      <div class="sec"><div class="k">S<button class="kcopy" data-copy="S">コピー</button></div><div class="body" data-k="S"></div></div>
+      <div class="ckin" data-k="S" hidden></div>
+      <div class="sec"><div class="k">O<button class="kcopy" data-copy="O">コピー</button></div><div class="body" data-k="O"></div></div>
+      <div class="ckin" data-k="O" hidden></div>
+      <div class="sec"><div class="k">A<button class="kcopy" data-copy="A">コピー</button></div><div class="body" data-k="A"></div></div>
+      <div class="ckin" data-k="A" hidden></div>
+      <div class="sec"><div class="k">P<button class="kcopy" data-copy="P">コピー</button></div><div class="body" data-k="P"></div></div>
+      <div class="ckin" data-k="P" hidden></div>
     </div>
     <div class="meta" id="meta"></div>
-    <div class="row-btns">
+    <div class="row-btns copybar">
       <button class="main" id="copyAll">全部コピー</button>
       <button id="shareAll">iPadへ送る</button>
     </div>
-    <div class="rate" id="rateBox" hidden>
-      <b>このまとめの評価</b>(あとで要約を良くするために使います。押さなくても使えます)
+    <details class="rate" id="rateBox" hidden>
+      <summary>このまとめを評価する(任意)<span class="rated" id="rateShown"></span></summary>
+      <div>あとで要約を良くするために使います。押さなくても使えます。</div>
       <div class="row" id="rateScore"><button data-v="◎">◎ そのまま</button><button data-v="○">○ 少し直した</button><button data-v="△">△ かなり直した</button><button data-v="×">× 使えない</button></div>
       <div class="row why" id="rateWhy"><button>歯の番号</button><button>用語の行き過ぎ</button><button>聞き間違いの直し</button><button>抜け</button><button>余計な付け足し</button><button>長すぎ</button><button>短すぎ</button><button>欄の分け方</button><button>言い回し</button></div>
       <textarea id="rateMemo" placeholder="気づいたこと(🎤で話してOK)"></textarea>
-    </div>
+    </details>
     <div class="hint"><span>貼る前に必ず内容を確認してください。欄の中は直接直せます。歯の番号(点線)はさわると選んで直せます。</span></div>
   </section>
 
@@ -247,26 +354,33 @@
 
 <dialog id="settings">
   <b tabindex="-1" autofocus style="outline:none">設定</b>
+  <div class="sgrp">まとめ</div>
+  <label for="aiModel">まとめのAI</label>
+  <select id="aiModel"><option value="opus">Opus(精度重視・10分 約7円)</option><option value="sonnet">Sonnet(節約・10分 約3円)</option><option value="haiku">Haiku(最安・歯の番号は文字)</option></select>
+  <label for="aiStyle">まとめ方</label>
+  <div class="lab-note">患者さん向けのやさしい言い方を、どこまで歯科用語にするか</div>
+  <select id="aiStyle"><option value="plain">言い換えない(聞き間違いだけ直す)</option><option value="terms">用語だけ(病名は付けない)</option><option value="full">病名まで</option></select>
+  <label for="aiLength">まとめの長さ</label>
+  <select id="aiLength"><option value="short">短め(大事な事実だけ)</option><option value="normal">ふつう</option><option value="long">詳しく(説明・指導も細かく)</option></select>
+  <label for="ckTapPick">確認欄のボタンの押し方</label>
+  <select id="ckTapPick"><option value="two">確かめて決定(仮に入れて「決定」)</option><option value="one">1回で決定(違ったら「やり直す」)</option></select>
+  <div class="sgrp">この端末</div>
+  <label for="keepDays">まとめの履歴を残す期間</label>
+  <div class="lab-note">共用の端末は「残さない」「その日だけ」も選べます</div>
+  <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option><option value="-1">ずっと(いっぱいになったら古い順に消える)</option></select>
+  <label for="autoClear">触らずに時間がたったら自動で消す</label>
+  <div class="lab-note">話した内容とまとめを消します</div>
+  <select id="autoClear"><option value="0">消さない</option><option value="5">5分</option><option value="10">10分</option><option value="30">30分</option><option value="60">60分</option></select>
+  <label for="device">この端末の名前</label>
+  <div class="lab-note">使った記録に残します。例:院長iPhone・共用iPad</div>
+  <input id="device" type="text" maxlength="30" placeholder="名前なし">
+  <label class="ailine" style="font-size:15px;margin-top:12px;color:inherit"><input type="checkbox" class="aiswitch" id="evOn" role="switch"><span>評価・分析用の詳しい記録を残す</span></label>
+  <p class="muted">この端末の中だけに保存します。</p>
+  <div class="sgrp">つなぎ方</div>
   <label for="pass">合言葉</label>
   <input id="pass" type="password" autocomplete="off">
   <label for="api">中継サーバーのURL</label>
   <input id="api" type="url" placeholder="ふつうは空欄のまま">
-  <label for="autoClear">触らずに時間がたったら、話した内容とまとめを自動で消す</label>
-  <select id="autoClear"><option value="0">消さない</option><option value="5">5分</option><option value="10">10分</option><option value="30">30分</option><option value="60">60分</option></select>
-  <label for="aiModel">まとめのAI</label>
-  <select id="aiModel"><option value="opus">Opus(精度重視・10分の会話 約7円)</option><option value="sonnet">Sonnet(節約・10分の会話 約3円)</option><option value="haiku">Haiku(最安・用語だけ・歯の番号は文字で)</option></select>
-  <label for="aiStyle">まとめ方(患者さん向けのやさしい言い方を、どこまで歯科用語にするか)</label>
-  <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
-  <label for="ckTapPick">確認欄の候補ボタンの押し方</label>
-  <select id="ckTapPick"><option value="two">確かめて決定(本文の前→後を見せて、「決定」で決める)</option><option value="one">1回で決定(違ったら「やり直す」)</option></select>
-  <label for="aiLength">まとめの長さ</label>
-  <select id="aiLength"><option value="short">短め(大事な事実だけ。確認欄は5件まで)</option><option value="normal">ふつう</option><option value="long">詳しく(説明は選択肢ごと・指導は中身ごと)</option></select>
-  <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
-  <select id="keepDays"><option value="0">残さない</option><option value="1">その日だけ</option><option value="3">3日</option><option value="7">7日</option><option value="30">30日</option><option value="-1">ずっと(いっぱいになったら古い順に消える)</option></select>
-  <label for="device">この端末の名前(使った記録に残します。例:院長iPhone・共用iPad)</label>
-  <input id="device" type="text" maxlength="30" placeholder="名前なし">
-  <label class="ailine" style="font-size:15px;margin-top:12px;color:inherit"><input type="checkbox" class="aiswitch" id="evOn" role="switch"><span>評価・分析用の詳しい記録を残す</span></label>
-  <p class="muted">この端末の中だけに保存します。</p>
   <div class="row-btns"><button class="main" id="saveSettings">保存</button><button id="closeSettings">閉じる</button></div>
   <div class="usage-box">
     <b>評価・分析用の詳しい記録(この端末の中)</b>
@@ -282,7 +396,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/19i(新しい行の言葉を空欄に)</p>
+    <p class="muted">版 11/20c(最初はいつも「このままでよい」)</p>
   </div>
 </dialog>
 
@@ -427,6 +541,8 @@ function ckParse(line) {
   const useful = (w) => (w && !/歯の番号|歯番|番号|部位|不明|上下|左右/.test(w) ? w : "");
   return { text, cands, target, quote, ideas, write: useful(write) || (arrow ? "" : useful(quote)), done, undo, from: arrow ? arrow[1] : "", word, sec, tooth };
 }
+// 表示用:項目の頭の欄の文字(「O「根元…」の O)は、その欄の下に出しているので外す
+const ckShow = (t) => t.replace(/^[SOAP](?=[\s・「『(（])\s*/, "");
 const ckText = (i) => ckParse(checkItems[i]).text; // 印を外した文(表示・CSVの件数用)
 const hasMark = (w) => KEYS.some((k) => getMarked(k).includes(`〘${w}〙`));
 const ckLinesOf = (k) => getMarked(k).split("\n");
@@ -446,6 +562,15 @@ function ckRecentTeeth() {
   }
   return out.slice(0, 2);
 }
+// 「○と同じ」の候補:さっき足した歯 → 本文のほかの行にすでに書いてある歯(1行の歯をまとめて1つ)。3つまで(2026-11-19)
+function ckToothChoices() {
+  const out = [...ckRecentTeeth()];
+  for (const k of KEYS) for (const l of ckLinesOf(k)) {
+    const t = (l.match(TOOTH_RE) || []).join(" ");
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out.slice(0, 3);
+}
 function ckNext(from = -1) { // まだ済んでいない次の項目
   for (let d = 1; d <= checkItems.length; d++) { const i = (from + d) % checkItems.length; if (ckParse(checkItems[i]).done === undefined) return i; }
   return -1;
@@ -457,13 +582,24 @@ function ckWhere(c) {
   if (t) return t;
   return c.sec ? [c.sec, -1] : null;
 }
+function ckLineOf(c) {
+  const t = ckTargetLine(c); if (t) return t;
+  const w = c.word ? ckWhere(c) : null;
+  return w && w[1] >= 0 ? [w[0], w[1], c.word] : null;
+}
+// 行に歯の番号がなければ、歯を足すボタン(項目そのものは済ませない)
+function ckToothNeed(c) {
+  const t = ckLineOf(c);
+  if (!t || (ckLinesOf(t[0])[t[1]].match(TOOTH_RE) || []).length) return "";
+  return `<div class="sub" style="width:100%">この行に歯の番号がありません(ほかの行の歯をそのまま足せます)</div>` + ckToothChoices().map((x) => `<button class="cand" data-a="toothHere" data-v="${esc(x)}">${esc(x)} を足す</button>`).join("") + `<button data-a="tooth">歯を選ぶ</button>`;
+}
 function ckTargetLine(c) {
   // [対象]がなくても、歯の項目の[書く]の言葉が本文の行にあれば、その行を対象にする(同じ内容の行が2つにならないように)
   // [対象]がなければ、歯の項目では[書く]の言葉、それもなければ項目の文の「…」の言葉で本文の行を探す
   const keys = [c.target, c.tooth ? c.write : "", c.tooth ? c.quote : ""].filter(Boolean);
   for (const key of keys) {
     const hits = (c.sec ? [c.sec] : KEYS).flatMap((k) => ckLinesOf(k).map((t, n) => [k, n, t])).filter(([, , t]) => t.replace(/[〘〙]/g, "").includes(key));
-    if (hits.length === 1) return [hits[0][0], hits[0][1]];
+    if (hits.length === 1) return [hits[0][0], hits[0][1], key];
   }
   return null;
 }
@@ -476,7 +612,9 @@ function ckPaint() {
   const sel = ckOpen && ckOpen.at ? ckOpen.at : ckSel >= 0 && checkItems[ckSel] ? ckWhere(ckParse(checkItems[ckSel])) : null;
   if (sel && sel[1] < 0) boxes[sel[0]].closest(".sec").classList.add("ckbox");
   else if (sel) (marks[sel[0]] = marks[sel[0]] || {})[sel[1]] = "ckhl";
-  if (ckFlash) (marks[ckFlash[0]] = marks[ckFlash[0]] || {})[ckFlash[1]] = ((marks[ckFlash[0]] || {})[ckFlash[1]] ? "ckhl " : "ckhl ") + "flash" + (sel && sel[0] === ckFlash[0] && sel[1] === ckFlash[1] ? "" : " only");
+  // 仮に入れた(変えた)行は、決定・やめるまで緑で塗っておく(どこが変わったか分かるように)
+  if (ckOpen && ckOpen.kind === "try" && ckOpen.u && !ckOpen.u.ins) { (marks[ckOpen.u.k] = marks[ckOpen.u.k] || {})[ckOpen.u.n] = "ckhl cktry"; }
+  else if (ckFlash) (marks[ckFlash[0]] = marks[ckFlash[0]] || {})[ckFlash[1]] = ((marks[ckFlash[0]] || {})[ckFlash[1]] ? "ckhl " : "ckhl ") + "flash" + (sel && sel[0] === ckFlash[0] && sel[1] === ckFlash[1] ? "" : " only");
   for (const [k, m] of Object.entries(marks)) {
     const ls = ckLinesOf(k);
     boxes[k].innerHTML = ls.map((l, n) => (m[n] ? `<span class="${m[n]}">${boxHtml(l)}</span>` : boxHtml(l))).join("\n");
@@ -484,71 +622,101 @@ function ckPaint() {
 }
 function ckScrollToSel() { const el = document.querySelector(".ckhl:not(.only), .sec.ckbox"); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); }
 function showChecks() {
+  // 2026-11-19 確認は各欄(S/O/A/P)の本文のすぐ下に置く(上下の行き来をなくす)。欄の分からない項目はSの上の「全体の確認」。上の #checks は残り件数のまとめ
   const box = $("checks");
   box.hidden = !checkItems.length;
-  if (!checkItems.length) { box.innerHTML = ""; ckPaint(); return; }
+  const buckets = { "": "", S: "", O: "", A: "", P: "" };
+  const put = (c, h) => { buckets[c.sec || ""] += h; };
+  if (!checkItems.length) { box.innerHTML = ""; if ($("copyAll")) $("copyAll").textContent = "全部コピー"; document.querySelectorAll(".ckin").forEach((e) => { e.innerHTML = ""; e.hidden = true; }); ckPaint(); return; }
   const left = checkItems.filter((l) => ckParse(l).done === undefined).length;
-  const two = ckTap() === "two";
-  let html = `<b>貼る前に確認(${checkItems.length}件${left < checkItems.length ? `・残り${left}件` : ""}・コピーには入りません)</b>
-    <div class="ckhead"><span class="sub">項目をさわると本文の場所を青い枠で囲います</span><span class="seg cktap"><button data-a="tap" data-v="two" class="${two ? "on" : ""}">確かめて決定</button><button data-a="tap" data-v="one" class="${two ? "" : "on"}">1回で決定</button></span></div>`;
   checkItems.forEach((line, i) => {
     const c = ckParse(line), sel = i === ckSel;
     if (c.done !== undefined) {
-      html += `<div class="ck done${sel ? " sel" : ""}" data-i="${i}"><div class="acts"><span class="q" data-a="see">✓ ${esc(c.text)} <span class="sub">${esc(c.done)}</span></span><button class="undo" data-a="undo">やり直す</button></div></div>`;
+      put(c, `<div class="ck done${sel ? " sel" : ""}" data-i="${i}"><div class="acts"><span class="q" data-a="see"><span class="ok">✓</span>${esc(ckShow(c.text))} <span class="sub">${esc(c.done)}</span></span><button class="undo" data-a="undo">やり直す</button></div></div>`);
       return;
     }
+    // 選んでいない項目はたたむ(項目の文だけ。さわると開いてボタンが出る)。2026-11-20 初めての人が迷わないように
+    if (!sel) { put(c, `<div class="ck fold" data-i="${i}"><div class="q" data-a="see"><span>${esc(ckShow(c.text))}</span><span class="chev">開く</span></div></div>`); return; }
     const op = ckOpen && ckOpen.i === i ? ckOpen : null;
     // acts=最初の段のボタン / stage=次の段(開いたときだけ。オレンジの枠で囲い「次はここ」) / step=手順の表示(2026-11-19 案2)
     let acts = "", stage = "", step = "", label = "次はここ";
-    const live = c.word && hasMark(c.word);
+    const tryOn = op && op.kind === "try";
+    const live = c.word && (hasMark(c.word) || (tryOn && op.log && op.log.from === c.word));
     if (live) {
-      for (const x of c.cands) if (x !== c.word) acts += `<button class="cand" data-a="cand" data-v="${esc(x)}">${esc(x)}</button>`;
+      // 最初のボタンはどの項目も「このままでよい」(2026-11-19)
       acts += `<button class="main" data-a="ok">このままでよい</button>`;
+      for (const x of c.cands) if (x !== c.word) acts += `<button class="cand${tryOn && op.log.to === x ? " picked" : ""}" data-a="cand" data-v="${esc(x)}">${esc(x)}</button>`;
       if (c.from && c.from !== c.word) acts += `<button data-a="back">元に戻す「${esc(c.from)}」</button>`;
       acts += `<button data-a="edit">自分で直す</button>`;
-      if (op && op.kind === "pre") {
-        const w = ckWhere(c);
-        if (w && w[1] >= 0) { const l = ckLinesOf(w[0])[w[1]]; stage += `<div class="ckprev">${w[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del><br>→ <ins>${esc(l.replace(`〘${c.word}〙`, op.v).replace(/[〘〙]/g, ""))}</ins></div><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button>`; label = "よければ「決定」"; }
-      }
+      if (!op) acts += ckToothNeed(c);
+      if (op && op.kind === "tooth") { stage += ckChart(op.sel || []); label = "歯を選んで「決定」(この行の頭に入ります)"; }
       if (op && op.kind === "edit") { stage += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckFix" value="${esc(c.word)}"><button class="main" data-a="save">決定</button></div>`; label = "書き換えて「決定」"; }
     } else if (c.tooth) {
       const picked = op && (op.kind === "how" || op.kind === "line");
       // さっき足した歯と同じなら、歯式図を開かずに足し方へ(使うかどうかは先生が決める)
-      if (!op) for (const t of ckRecentTeeth()) acts += `<button class="cand" data-a="sameTooth" data-v="${esc(t)}">${esc(t)} と同じ</button>`;
-      acts += `<button class="main" data-a="tooth">${picked ? "歯を選び直す" : "歯を選ぶ(何本でも)"}</button><button data-a="note">書き足す</button><button data-a="skip">足さない</button>`;
+      acts += `<button data-a="seen">このままでよい</button>`;
+      if (!op) for (const t of ckToothChoices()) acts += `<button class="cand" data-a="sameTooth" data-v="${esc(t)}">${esc(t)} と同じ</button>`;
+      acts += `<button class="main" data-a="tooth">${picked ? "歯を選び直す" : "歯を選ぶ(何本でも)"}</button><button data-a="note">書き足す</button>`;
       if (op && op.kind === "tooth") { stage += ckChart(op.sel || []); step = `<b>① 歯を選んで「決定」</b> → ② 足し方を選ぶ`; label = "① 次はここ"; }
+      if (op && op.kind === "try" && op.tooth) step = `<b>${esc(op.tooth)} を追加</b>`;
       if (op && op.kind === "how") { stage += ckHow(c, op); step = `① 歯を選ぶ ✓ <b>${esc(op.tooth)}</b> → <b>② 足し方を選ぶ</b>`; label = "② 次はここ"; }
       if (op && op.kind === "line") { stage += `<div class="sub" style="width:100%">${esc(op.tooth)} を頭に足す行を選んでください</div><div class="lines">${ckLines(c.sec)}</div>`; step = `① 歯を選ぶ ✓ <b>${esc(op.tooth)}</b> → <b>② 足す行を選ぶ</b>`; label = "② 次はここ"; }
     } else {
       // 本文のどの行の話か分かる項目:このままでよい/この行を直す/この行を消す(2026-11-19 「確認した」はなくした)
       // 分からない項目:このままでよい/書き足す/行を選んで直す/行を選んで消す(どの行かは先生が選ぶ。間違えてもやり直せる)
       const tl = ckTargetLine(c), t = (op && op.at) || tl, l = t ? ckLinesOf(t[0])[t[1]] : "";
-      acts += `<button class="main" data-a="seen">このままでよい</button>`;
+      // AIが用意した「書きそうな文」を最初の段にそのまま並べる(押すと、行の話の項目はその行を置き換え、ほかは欄の最後に1行足す)
+      // 本文の行とつながらない項目(意味が不明・矛盾など)は「このままでよい」だと項目の文が本文に入ると思われるので「本文に書かない」
+      acts += `<button class="main" data-a="seen">${tl ? "このままでよい" : "本文に書かない"}</button>`;
+      if (c.ideas.length) acts += `<div class="sub" style="width:100%">書きそうな文(押すと本文に入ります)</div>` + c.ideas.map((x) => `<button class="cand${tryOn && op.log && op.log.to === x ? " picked" : ""}" data-a="ideaGo" data-v="${esc(x)}">${esc(x)}</button>`).join("") + `<div style="width:100%"></div>`;
       if (tl) acts += `<button data-a="lineEdit">この行を直す</button><button data-a="lineDel">この行を消す</button>`;
       else acts += `<button data-a="note">書き足す</button><button data-a="pickEdit">行を選んで直す</button><button data-a="pickDel">行を選んで消す</button>`;
+      // 指している行に歯の番号がなければ、歯を足すボタンも出す(歯の番号は基本どの行にも入る・2026-11-19)。項目そのものは済ませない
+      if (tl && !op) acts += ckToothNeed(c);
       if (op && op.kind === "pickEdit") { stage += `<div class="lines">${ckLines(c.sec, "editPick")}</div>`; label = "直す行を選ぶ"; }
       if (op && op.kind === "pickDel") { stage += `<div class="lines">${ckLines(c.sec, "delPick")}</div><div class="sub" style="width:100%">間違えても「やり直す」で戻せます</div>`; label = "消す行を選ぶ"; }
-      if (op && op.kind === "delPre" && t) { stage += `<div class="ckprev">${t[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del> を消します</div><button class="main" data-a="preOk">決定</button><button data-a="preNo">やめる</button>`; label = "よければ「決定」"; }
+      if (op && op.kind === "tooth") { stage += ckChart(op.sel || []); label = "歯を選んで「決定」(この行の頭に入ります)"; }
       if (op && op.kind === "lineEdit" && t) { stage += ckIdeas(c, "ckLineFix") + `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckLineFix" value="${esc(l.replace(/^\s*[・\-]\s*/, "").replace(/[〘〙]/g, ""))}"><button class="main" data-a="lineSave">決定</button></div>`; label = "書き換えて「決定」"; }
     }
     if (op && (op.kind === "note" || op.kind === "noteLine")) { stage += ckNoteBox(c); label = op.kind === "noteLine" ? "後ろに足す行を選ぶ" : "書いて足し方を選ぶ"; }
+    const decide = tryOn ? ckTryBar(op) : "";
+    if (tryOn) stage = "";
+    // 歯の項目で歯を仮に入れたあとは、最初の段(このままでよい・歯を選ぶ・書き足す)を隠し、決定・やめる・ほかの足し方だけにする(紛らわしいため)
+    if (tryOn && c.tooth && op.tooth) acts = "";
+    // 行の話の項目で歯の番号だけ足したとき(toothHere)も同じく「└6 を追加」＋決定・やめるだけ
+    if (tryOn && op.keep && op.log && op.log.act === "toothHere") { acts = ""; step = `<b>${esc(op.log.to)} を追加</b>`; }
     // 次の段が開いているときは、最初の段のボタンを白に戻す(青は「今押すボタン」だけ)
-    if (stage) acts = acts.replace(/class="main"/g, 'class="dim"');
-    html += `<div class="ck${sel ? " sel" : ""}" data-i="${i}"><div class="q" data-a="see">${esc(c.text)}</div>${step ? `<div class="ckstep">${step}</div>` : ""}<div class="acts">${acts}</div>${stage ? `<div class="ckstage"><span class="cknext">${esc(label)}</span><div class="acts">${stage}</div></div>` : ""}</div>`;
+    if (stage || decide) acts = acts.replace(/class="main"/g, 'class="dim"');
+    // 仮に入れている間は、候補・書きそうな文(押すと切り替わる)以外のボタンを隠す(決定か元に戻すに集中できるように)
+    if (tryOn) acts = acts.replace(/<button[^>]*data-a="(note|pickEdit|pickDel|lineEdit|lineDel|edit|tooth|toothHere|sameTooth)"[^>]*>[^<]*<\/button>/g, "").replace(/<div class="sub" style="width:100%">この行に歯の番号がありません[^<]*<\/div>/, "");
+    if (ckLastAdd && ckLastAdd.i === i && !tryOn) step = `${esc(ckLastAdd.tooth)} を足しました <button class="undo" data-a="addUndo" style="min-height:30px;padding:2px 10px;font-size:13px">↩ 元に戻す</button>` + (step ? "<br>" + step : "");
+    put(c, `<div class="ck${sel ? " sel" : ""}" data-i="${i}">${sel ? '<span class="cknow">いまここ</span>' : ""}<div class="q" data-a="see">${esc(ckShow(c.text))}</div>${step ? `<div class="ckstep">${step}</div>` : ""}${acts ? `<div class="acts">${acts}</div>` : ""}${decide}${stage ? `<div class="ckstage"><span class="cknext">${esc(label)}</span><div class="acts">${stage}</div></div>` : ""}</div>`);
   });
-  html += `<div class="legend">本文の<mark class="guess">黄色の言葉</mark>は、AIが推測して直したところです(さわると、この欄のその項目に移ります。コピーすると色は消えます)。</div>`;
-  box.innerHTML = html;
+  // 上のまとめ:残り件数(欄ごと。押すとその欄の最初の残りへ)・押し方・説明
+  const leftOf = (k) => checkItems.filter((l) => { const c = ckParse(l); return c.done === undefined && (c.sec || "") === k; }).length;
+  const chips = ["", "S", "O", "A", "P"].filter((k) => leftOf(k)).map((k) => `<button data-a="goSec" data-k="${k}">${k || "全体"} ${leftOf(k)}件</button>`).join("");
+  box.innerHTML = `<b>貼る前の確認</b> <span class="legend">${left ? `残り${left}件(全${checkItems.length}件)` : `✓ ${checkItems.length}件すべて済み`}</span>
+    ${chips ? `<div class="ckhead"><span class="ckchips">${chips}</span><span class="legend">押すとその欄の確認へ</span></div>` : ""}
+    <div class="cklegend"><i style="background:var(--guess)"></i>AIが推測した言葉 <i style="border:2px solid var(--gold-line)"></i>いま見ている所 <i style="border:2px solid var(--ok);background:var(--ok-soft)"></i>仮に入れた行</div>
+    <details class="help"><summary>くわしい見方</summary><p>確認は各欄(S・O・A・P)の本文のすぐ下にあります。項目をさわると開き、ボタンで直せます。本文が変わるボタンは、押すと本文に仮に入り(緑)、「決定」で決まります。違ったら「元に戻す」。決めたあとも「やり直す」で戻せます。確認と色はコピーには入りません。押し方(確かめて決定/1回で決定)は設定で変えられます。</p></details>`;
+  const ca = $("copyAll"); if (ca) ca.innerHTML = left ? `全部コピー<small>確認 残り${left}件</small>` : "全部コピー";
+  document.querySelectorAll(".ckin").forEach((e) => {
+    const k = e.dataset.k, h = buckets[k] || "";
+    e.hidden = !h;
+    e.innerHTML = h ? (k ? "" : '<div class="ckin-h">全体の確認</div>') + h : "";
+  });
   ckPaint();
 }
 // 歯式図(右上8…1|1…8左上 / 右下8…1|1…8左下)。何本でも選べる
 const ckTName = (q, d) => (q === "UR" ? d + "┘" : q === "UL" ? "└" + d : q === "LR" ? d + "┐" : "┌" + d);
+const ckTWord = (t) => { const d = t.replace(/[┘└┐┌]/g, ""); return (t.endsWith("┘") ? "右上" : t.startsWith("└") ? "左上" : t.endsWith("┐") ? "右下" : "左下") + d + "番"; };
 const CK_T_ORDER = ["UR", "UL", "LR", "LL"].flatMap((q) => [1, 2, 3, 4, 5, 6, 7, 8].map((d) => ckTName(q, d)));
 function ckChart(sel) {
   const btn = (q, d) => { const t = ckTName(q, d); return `<button class="${sel.includes(t) ? "on" : ""}" data-a="t" data-v="${t}">${d}</button>`; };
   const row = (r, l) => [8, 7, 6, 5, 4, 3, 2, 1].map((d) => btn(r, d)).join("") + `<span class="mid"></span>` + [1, 2, 3, 4, 5, 6, 7, 8].map((d) => btn(l, d)).join("");
   const picked = CK_T_ORDER.filter((t) => sel.includes(t));
   return `<div class="ckchart"><div class="lr"><span>右上</span><span>左上</span></div><div class="jaw up">${row("UR", "UL")}</div><div class="jaw lo">${row("LR", "LL")}</div><div class="lr"><span>右下</span><span>左下</span></div>
-    <div class="picked">選んだ歯:<b>${picked.length ? picked.join(" ") : "まだありません"}</b></div>
+    <div class="picked">選んだ歯:<b>${picked.length ? picked.join(" ") : "まだありません"}</b>${picked.length ? `<span style="font-size:12px;color:var(--sub);margin-left:6px">(${picked.map(ckTWord).join("・")})</span>` : ""}</div>
     <div class="acts"><button class="main" data-a="tOk"${picked.length ? "" : " disabled"}>決定</button><button data-a="tClear">すべて外す</button></div></div>`;
 }
 // 歯を決めたあとの足し方:AIが教えた行の頭に / ほかの行を選ぶ / 新しい行で書く(言葉は最初から入れておく)
@@ -593,7 +761,16 @@ function ckLines(sec, act = "line", mainIfOne = false) {
 // 本文を1行だけ変える。やり直し用に {欄, 行, 元の行(null=足した行)} を返す
 function ckSetLine(k, n, text) { const ls = ckLinesOf(k), old = ls[n]; ls[n] = text; setBox(k, ls.join("\n")); return { k, n, old }; }
 function ckReplace(word, to) { // 本文の〘word〙を to に(黄色を外す)
-  for (const k of KEYS) { const ls = ckLinesOf(k), n = ls.findIndex((l) => l.includes(`〘${word}〙`)); if (n >= 0) return ckSetLine(k, n, ls[n].replace(`〘${word}〙`, to)); }
+  for (const k of KEYS) {
+    const ls = ckLinesOf(k), n = ls.findIndex((l) => l.includes(`〘${word}〙`)); if (n < 0) continue;
+    const i = ls[n].indexOf(`〘${word}〙`), pre = ls[n].slice(0, i);
+    let post = ls[n].slice(i + word.length + 2);
+    // 候補が「〜しない」「〜したい」「〜を希望」のように文の終わりまで言い切っていて、後ろが「を希望」のような短い続きなら、続きは重なるので外す
+    // (例「〘セラミックは選ばず…〙を希望」で「セラミックを希望しない」→「セラミックを希望しないを希望」にならないように)
+    const tail = post.match(/^[をがはにで][^、。,，\n]{0,8}(?=[、。,，]|$)/);
+    if (tail && /(ない|たい|る|た|あり|なし|希望|予定|不要)$/.test(to) && !/^[をがはにで]/.test(to.slice(-tail[0].length))) post = post.slice(tail[0].length);
+    return ckSetLine(k, n, pre + to + post);
+  }
   return null;
 }
 function ckDelLine(k, n) {
@@ -602,7 +779,21 @@ function ckDelLine(k, n) {
   setBox(k, ls.filter((x) => x.trim()).length ? ls.join("\n") : "記載なし");
   return { k, n, old, ins: true };
 }
-const ckAddTooth = (k, n, tooth) => ckSetLine(k, n, ckLinesOf(k)[n].replace(/^(\s*[・\-]?\s*)/, `$1${tooth} `));
+// 歯の番号を足す。目印の言葉(anchor)が行の途中にあれば、その言葉のすぐ前に入れる(例「…、隣在歯に」→「…、└6 隣在歯に」)。なければ行の頭
+const ckAddTooth = (k, n, tooth, anchor) => {
+  const line = ckLinesOf(k)[n], head = line.match(/^\s*[・\-]?\s*/)[0];
+  const at = anchor ? ckAnchorAt(line, anchor) : -1;
+  if (at > head.length) { const pre = line.slice(0, at); return ckSetLine(k, n, pre + (/[\s　、。,，(（・]$/.test(pre) ? "" : " ") + tooth + " " + line.slice(at)); }
+  return ckSetLine(k, n, line.replace(/^(\s*[・\-]?\s*)/, `$1${tooth} `));
+};
+// 〘〙を除いた言葉の位置を、元の行の位置に直して返す
+function ckAnchorAt(line, key) {
+  const map = []; let plain = "";
+  for (let j = 0; j < line.length; j++) if (line[j] !== "〘" && line[j] !== "〙") { map.push(j); plain += line[j]; }
+  const p = plain.indexOf(key); if (p < 0) return -1;
+  let at = map[p]; if (at > 0 && line[at - 1] === "〘") at--;
+  return at;
+}
 const ckAppendTo = (k, n, text) => ckSetLine(k, n, ckLinesOf(k)[n].replace(/\s+$/, "") + " " + text);
 function ckAppendLine(k, text) {
   const v = getMarked(k).trim();
@@ -618,54 +809,123 @@ function ckDone(i, label, log, undo) {
   saveLast(); checkTeeth(); showChecks();
   if (ckFlash) setTimeout(() => { ckFlash = null; ckPaint(); }, 1300);
 }
+// 本文の1か所の変更を元に戻す(u = { k, n, old, ins })
+function ckRevert(u) {
+  if (!u) return;
+  const ls = ckLinesOf(u.k);
+  if (u.ins) { if (ls.length === 1 && ls[0].trim() === "記載なし") ls.splice(0, 1); ls.splice(Math.min(u.n, ls.length), 0, u.old); }
+  else if (u.old == null) { if (u.n < ls.length) ls.splice(u.n, 1); }
+  else if (u.n < ls.length) ls[u.n] = u.old;
+  setBox(u.k, ls.join("\n").trim() ? ls.join("\n") : "記載なし");
+}
 function ckUndo(i) {
   const c = ckParse(checkItems[i]);
-  if (c.undo) {
-    const ls = ckLinesOf(c.undo.k);
-    if (c.undo.ins) { if (ls.length === 1 && ls[0].trim() === "記載なし") ls.splice(0, 1); ls.splice(Math.min(c.undo.n, ls.length), 0, c.undo.old); }
-    else if (c.undo.old == null) { if (c.undo.n < ls.length) ls.splice(c.undo.n, 1); }
-    else if (c.undo.n < ls.length) ls[c.undo.n] = c.undo.old;
-    setBox(c.undo.k, ls.join("\n"));
-  }
+  if (c.undo) ckRevert(c.undo);
   checkItems[i] = checkItems[i].replace(/\s*\{(済|戻)[:：][^}]*\}/g, "");
   if (evCase) { (evCase.checks = evCase.checks || []).push({ at: Date.now(), key: shownKey, item: ckText(i), act: "undo" }); }
   ckOpen = null; ckSel = i; ckFlash = null;
   saveLast(); checkTeeth(); showChecks();
 }
+// 書きそうな文を本文へ:行の話の項目はその行を置き換え、ほかは欄の最後に1行足す
+function ckIdeaApply(i, c, v) {
+  const t = ckTargetLine(c), u = ckIdeaChange(c, v);
+  ckDone(i, `「${v}」を選んだ`, { act: "idea", to: v, where: t ? t[0] : c.sec || "P" }, u);
+}
+function ckIdeaChange(c, v) {
+  const t = ckTargetLine(c);
+  let u;
+  if (t) {
+    const old = ckLinesOf(t[0])[t[1]], pre = (old.match(/^\s*[・\-]?\s*/) || [""])[0] || "・";
+    // 元の行に歯の番号があって、選んだ文になければ、歯の番号は残す
+    const teeth = (old.match(TOOTH_RE) || []).join(" ");
+    u = ckSetLine(t[0], t[1], pre + (teeth && !(v.match(TOOTH_RE) || []).length ? teeth + " " : "") + v);
+  }
+  else u = ckAppendLine(c.sec || "P", v);
+  return u;
+}
+// 「確かめて決定」:押したらすぐ本文を変えて(仮)、「決定」で確定・「やめる」で元に戻す(2026-11-19 本文が変わるボタンは全部この形)
+// keep=true は項目を済ませない(行に歯の番号を足すだけのとき)
+function ckTry(i, u, label, log, extra = {}) {
+  if (!u) return;
+  ckOpen = { i, kind: "try", u, label, log, ...extra };
+  ckFlash = u.ins ? null : [u.k, u.n]; checkTeeth(); showChecks(); setTimeout(() => { ckFlash = null; ckPaint(); }, 1300);
+}
+function ckTryCancel() {
+  if (!ckOpen || ckOpen.kind !== "try") return;
+  ckRevert(ckOpen.u); ckOpen = null; checkTeeth();
+}
+// 仮に入れたあとの行(枠なし。本文はもう変わっているので「こう変わります」の文は出さない。消したときだけ消した行を1行)
+function ckTryBar(op) {
+  const u = op.u;
+  const t = u.ins ? `本文から仮に消しました：<del>${esc(String(u.old).replace(/^\s*[・\-]?\s*/, "").replace(/[〘〙]/g, "").slice(0, 30))}</del>` : (op.tooth && !op.keep) || (op.log && op.log.act === "toothHere") ? "" : "本文に仮に入れました";
+  return `<div class="ckdecide"><span class="t">${t}</span><button class="main" data-a="tryOk">決定</button><button data-a="tryNo">↩ 元に戻す</button>${op.tooth && !op.keep ? `<button data-a="tryOther">ほかの足し方</button>` : ""}<span class="after">${op.keep ? "決定すると本文に残ります(項目はまだ残ります)" : "決定すると ✓ が付きます。あとから「やり直す」で戻せます"}</span></div>`;
+}
+// 行に歯の番号だけ足す(項目は済ませない)。確かめて決定=仮に入れて決定・元に戻す/1回で決定=すぐ入れて緑に光らせる
+let ckLastAdd = null; // 1回で決定で行に足した歯(その項目の中で「元に戻す」できるように)
+function ckToothHere(i, c, u, tooth) {
+  if (!u) return;
+  if (ckTap() === "two") { ckTry(i, u, "", { act: "toothHere", to: tooth }, { keep: true }); return; }
+  ckOpen = null; ckFlash = [u.k, u.n]; ckLastAdd = { i, u, tooth };
+  if (evCase) (evCase.checks = evCase.checks || []).push({ at: Date.now(), key: shownKey, item: c.text, act: "toothHere", to: tooth });
+  saveLast(); checkTeeth(); showChecks(); setTimeout(() => { ckFlash = null; ckPaint(); }, 1300);
+}
+// 歯を本文の行に入れる(入れる行が分からなければ足し方を選ぶ段へ)
+function ckToothTry(i, c, tooth) {
+  const t = ckTargetLine(c);
+  if (!t) { ckOpen = { i, kind: "how", tooth }; showChecks(); return; }
+  const u = ckAddTooth(t[0], t[1], tooth, t[2]);
+  if (ckTap() === "one") ckDone(i, `${tooth} を足した`, { act: "tooth", to: tooth }, u);
+  else ckTry(i, u, `${tooth} を足した`, { act: "tooth", to: tooth }, { tooth });
+}
 function ckApply(i, c, v, act) { // 推測の言葉を v に
   const u = ckReplace(c.word, v);
   ckDone(i, act === "back" ? `「${v}」に戻した` : act === "ok" ? "このまま" : `「${v}」を選んだ`, { act, from: c.word, to: v }, u);
 }
-$("checks").addEventListener("click", (e) => {
+$("result").addEventListener("click", (e) => {
+  if (!e.target.closest("#checks, .ckin")) return;
   const b = e.target.closest("button, [data-a='see']"); if (!b) return;
   const a = b.dataset.a;
-  if (a === "tap") { settings = { ...settings, ckTap: b.dataset.v }; store.set("settings", settings); ckOpen = null; showChecks(); return; }
+  if (a === "goSec") {
+    const k = b.dataset.k, i = checkItems.findIndex((l) => { const c = ckParse(l); return c.done === undefined && (c.sec || "") === k; });
+    if (i >= 0) { ckTryCancel(); ckSel = i; ckOpen = null; showChecks(); document.querySelector(`.ck[data-i="${i}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    return;
+  }
   const el = b.closest(".ck"); if (!el) return;
   const i = +el.dataset.i, c = ckParse(checkItems[i]);
-  if (a === "see") { ckSel = ckSel === i && !ckOpen ? -1 : i; if (ckOpen && ckOpen.i !== i) ckOpen = null; showChecks(); ckScrollToSel(); return; }
+  if (a === "see") { ckSel = ckSel === i && !ckOpen ? -1 : i; if (ckOpen && ckOpen.i !== i) { ckTryCancel(); ckOpen = null; } showChecks(); ckScrollToSel(); return; }
+  // 仮に入れた歯は、決定・やめる・ほかの足し方 以外の操作をしたら元に戻す
+  if (ckOpen && ckOpen.kind === "try" && !(ckOpen.i === i && ["tryOk", "tryNo", "tryOther"].includes(a))) ckTryCancel();
   if (a !== "undo") ckSel = i;
+  if (a === "addUndo") { if (ckLastAdd && ckLastAdd.i === i) ckRevert(ckLastAdd.u); ckLastAdd = null; saveLast(); checkTeeth(); showChecks(); return; }
+  ckLastAdd = null;
   if (a === "undo") ckUndo(i);
   else if (a === "ok") ckApply(i, c, c.word, "ok");
   else if (a === "cand" || a === "back") {
     const v = a === "cand" ? b.dataset.v : c.from;
     if (ckTap() === "one") ckApply(i, c, v, a);
-    else { ckOpen = { i, kind: "pre", v, act: a }; showChecks(); }
+    else ckTry(i, ckReplace(c.word, v), a === "back" ? `「${v}」に戻した` : `「${v}」を選んだ`, { act: a, from: c.word, to: v });
   }
   else if (a === "edit") { ckOpen = { i, kind: "edit" }; showChecks(); $("ckFix")?.focus(); }
   else if (a === "save") { const v = ($("ckFix").value || "").trim() || c.word; const u = ckReplace(c.word, v); ckDone(i, `「${v}」に直した`, { act: "edit", from: c.word, to: v }, u); }
-  else if (a === "seen") ckDone(i, "このまま", { act: "seen" });
+  else if (a === "seen") ckDone(i, b.textContent.trim() === "本文に書かない" ? "本文に書かない" : "このまま", { act: "seen" });
   // 確かめて決定:前→後(消す行)を見せた下の「決定」「やめる」(2026-11-19 同じボタンを2回押す形は分かりにくいのでやめた)
-  else if (a === "preOk") {
-    if (!ckOpen || ckOpen.i !== i) return;
-    if (ckOpen.kind === "pre") ckApply(i, c, ckOpen.v, ckOpen.act);
-    else if (ckOpen.kind === "delPre") { const t = ckTargetLine(c); if (!t) return; const u = ckDelLine(t[0], t[1]); ckDone(i, "行を消した", { act: "lineDel", where: t[0] }, u); }
+  else if (a === "toothHere") {
+    // 項目は済ませずに、指している行の頭に歯の番号だけ足す(緑に光らせる)
+    const t = ckLineOf(c); if (!t) return;
+    ckToothHere(i, c, ckAddTooth(t[0], t[1], b.dataset.v, t[2]), b.dataset.v);
   }
-  else if (a === "preNo") { ckOpen = null; showChecks(); }
+  else if (a === "ideaGo") {
+    if (ckTap() === "one") ckIdeaApply(i, c, b.dataset.v);
+    else { const t = ckTargetLine(c); ckTry(i, ckIdeaChange(c, b.dataset.v), `「${b.dataset.v}」を選んだ`, { act: "idea", to: b.dataset.v, where: t ? t[0] : c.sec || "P" }); }
+  }
   else if (a === "idea") { const inp = $(b.dataset.to); if (inp) { inp.value = b.dataset.v; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.focus(); } }
   else if (a === "lineEdit") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === "lineEdit" ? null : { i, kind: "lineEdit" }; showChecks(); $("ckLineFix")?.focus(); }
   else if (a === "pickEdit" || a === "pickDel") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === a ? null : { i, kind: a }; showChecks(); }
   else if (a === "editPick") { ckOpen = { i, kind: "lineEdit", at: [b.dataset.k, +b.dataset.n] }; showChecks(); $("ckLineFix")?.focus(); }
-  else if (a === "delPick") { const u = ckDelLine(b.dataset.k, +b.dataset.n); ckDone(i, "行を消した", { act: "lineDel", where: b.dataset.k }, u); }
+  else if (a === "delPick") {
+    const u = ckDelLine(b.dataset.k, +b.dataset.n), log = { act: "lineDel", where: b.dataset.k };
+    if (ckTap() === "one") ckDone(i, "行を消した", log, u); else ckTry(i, u, "行を消した", log);
+  }
   else if (a === "lineSave") {
     const t = (ckOpen && ckOpen.at) || ckTargetLine(c); if (!t) return;
     const v = ($("ckLineFix").value || "").trim(), pre = (ckLinesOf(t[0])[t[1]].match(/^\s*[・\-]?\s*/) || [""])[0] || "・";
@@ -673,16 +933,28 @@ $("checks").addEventListener("click", (e) => {
   }
   else if (a === "lineDel") {
     const t = ckTargetLine(c); if (!t) return;
-    if (ckTap() === "one") { const u = ckDelLine(t[0], t[1]); ckDone(i, "行を消した", { act: "lineDel", where: t[0] }, u); }
-    else { ckOpen = { i, kind: "delPre" }; showChecks(); }
+    const u = ckDelLine(t[0], t[1]), log = { act: "lineDel", where: t[0] };
+    if (ckTap() === "one") ckDone(i, "行を消した", log, u); else ckTry(i, u, "行を消した", log);
   }
-  else if (a === "skip") ckDone(i, "足さない", { act: "skip" });
   else if (a === "tooth") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === "tooth" ? null : { i, kind: "tooth", sel: [] }; showChecks(); }
   else if (a === "t") { const s = ckOpen.sel || [], t = b.dataset.v; ckOpen.sel = s.includes(t) ? s.filter((x) => x !== t) : [...s, t]; showChecks(); }
   else if (a === "tClear") { ckOpen.sel = []; showChecks(); }
-  else if (a === "sameTooth") { ckOpen = { i, kind: "how", tooth: b.dataset.v }; showChecks(); }
-  else if (a === "tOk") { const tooth = CK_T_ORDER.filter((t) => (ckOpen.sel || []).includes(t)).join(" "); ckOpen = { i, kind: "how", tooth }; showChecks(); }
-  else if (a === "toLine") { const t = ckTargetLine(c); const u = ckAddTooth(t[0], t[1], ckOpen.tooth); ckDone(i, `${ckOpen.tooth} を足した`, { act: "tooth", to: ckOpen.tooth }, u); }
+  else if (a === "sameTooth") ckToothTry(i, c, b.dataset.v);
+  else if (a === "tryOk") {
+    const o = ckOpen; if (!o || o.kind !== "try" || o.i !== i) { showChecks(); return; }
+    if (o.keep) { ckOpen = null; if (evCase) (evCase.checks = evCase.checks || []).push({ at: Date.now(), key: shownKey, item: c.text, ...o.log }); saveLast(); checkTeeth(); showChecks(); }
+    else ckDone(i, o.label, o.log, o.u);
+  }
+  else if (a === "tryNo") { ckTryCancel(); saveLast(); showChecks(); }
+  else if (a === "tryOther") { const tooth = ckOpen.tooth; ckTryCancel(); ckOpen = { i, kind: "how", tooth }; showChecks(); }
+  else if (a === "tOk") {
+    const tooth = CK_T_ORDER.filter((t) => (ckOpen.sel || []).includes(t)).join(" ");
+    // 歯の項目でない(行の話の項目で、行に歯の番号を足すだけ)ときは、その行の頭にすぐ入れて項目は残す
+    const t = !c.tooth && ckLineOf(c);
+    if (t) { ckToothHere(i, c, ckAddTooth(t[0], t[1], tooth, t[2]), tooth); return; }
+    ckToothTry(i, c, tooth);
+  }
+  else if (a === "toLine") { const t = ckTargetLine(c), tooth = ckOpen && ckOpen.tooth; if (!t || !tooth) return; const u = ckAddTooth(t[0], t[1], tooth, t[2]); if (ckTap() === "one") ckDone(i, `${tooth} を足した`, { act: "tooth", to: tooth }, u); else ckTry(i, u, `${tooth} を足した`, { act: "tooth", to: tooth }, { tooth }); }
   else if (a === "toothRewrite") {
     const t = ckTargetLine(c); if (!t) return;
     const v = ($("ckToothRewrite").value || "").trim(); if (!v) return;
@@ -690,7 +962,7 @@ $("checks").addEventListener("click", (e) => {
     const u = ckSetLine(t[0], t[1], pre + v); ckDone(i, `行を書き換えた「${v}」`, { act: "toothRewrite", to: v, where: t[0] }, u);
   }
   else if (a === "pickLine") { ckOpen = { ...ckOpen, kind: "line" }; showChecks(); }
-  else if (a === "line") { const u = ckAddTooth(b.dataset.k, +b.dataset.n, ckOpen.tooth); ckDone(i, `${ckOpen.tooth} を足した`, { act: "tooth", to: ckOpen.tooth }, u); }
+  else if (a === "line") { const tooth = ckOpen.tooth, u = ckAddTooth(b.dataset.k, +b.dataset.n, tooth); if (ckTap() === "one") ckDone(i, `${tooth} を足した`, { act: "tooth", to: tooth }, u); else ckTry(i, u, `${tooth} を足した`, { act: "tooth", to: tooth }, { tooth }); }
   else if (a === "newLine") {
     const w = (($("ckNewLine") || {}).value ?? ckOpen.write ?? c.write ?? "").trim(), line = ckOpen.tooth + (w ? " " + w : "");
     const u = ckAppendLine(b.dataset.k, line); ckDone(i, `新しい行「${line}」`, { act: "toothLine", to: line, where: b.dataset.k }, u);
@@ -704,22 +976,26 @@ $("checks").addEventListener("click", (e) => {
     ckDone(i, `「${text}」を書き足した`, { act: "note", to: text, where: b.dataset.k }, u);
   }
 });
-$("checks").addEventListener("input", (e) => {
+$("result").addEventListener("input", (e) => {
+  if (!e.target.closest("#checks, .ckin")) return;
   if (e.target.id === "ckNote" && ckOpen) ckOpen.text = e.target.value;
   if (e.target.id === "ckToothRewrite" && ckOpen) ckOpen.rewrite = e.target.value;
-  if (e.target.id === "ckNewLine" && ckOpen) { ckOpen.write = e.target.value; const b = $("checks").querySelector('[data-a="newLine"]'); if (b) b.textContent = `${b.dataset.k}に新しい行で足す${ckOpen.write ? ":" + ckOpen.tooth + " " + ckOpen.write : ""}`; }
+  if (e.target.id === "ckNewLine" && ckOpen) { ckOpen.write = e.target.value; const b = document.querySelector('.ckin [data-a="newLine"]'); if (b) b.textContent = `${b.dataset.k}に新しい行で足す${ckOpen.write ? ":" + ckOpen.tooth + " " + ckOpen.write : ""}`; }
 });
-$("checks").addEventListener("keydown", (e) => {
+$("result").addEventListener("keydown", (e) => {
+  if (!e.target.closest("#checks, .ckin")) return;
   if (e.target.id === "ckLineFix" && e.key === "Enter") { e.preventDefault(); e.target.closest(".ck").querySelector('[data-a="lineSave"]').click(); return; }
-  if (e.target.id === "ckFix" && e.key === "Enter") { e.preventDefault(); e.target.closest(".ck").querySelector('[data-a="save"]').click(); } });
+  if (e.target.id === "ckFix" && e.key === "Enter") { e.preventDefault(); e.target.closest(".ck").querySelector('[data-a="save"]').click(); return; }
+  const go = { ckToothRewrite: '[data-a="toothRewrite"]', ckNewLine: '[data-a="newLine"]', ckNote: '[data-a="noteAdd"]' }[e.target.id];
+  if (go && e.key === "Enter" && !e.isComposing) { e.preventDefault(); e.target.closest(".ck").querySelector(go)?.click(); } });
 // 本文の黄色の言葉をさわったら、確認欄のその項目へ(キーボードは出さない)
 $("soap").addEventListener("mousedown", (e) => { if (e.target.closest("mark.guess")) e.preventDefault(); });
 $("soap").addEventListener("click", (e) => {
   const m = e.target.closest("mark.guess"); if (!m) return;
   e.preventDefault();
   const i = checkItems.findIndex((l) => { const c = ckParse(l); return c.done === undefined && c.word === m.textContent; });
-  if (i >= 0) { ckSel = i; showChecks(); }
-  const el = i >= 0 && $("checks").querySelector(`.ck[data-i="${i}"]`);
+  if (i >= 0) { if (ckOpen && ckOpen.i !== i) { ckTryCancel(); ckOpen = null; } ckSel = i; showChecks(); }
+  const el = i >= 0 && document.querySelector(`.ck[data-i="${i}"]`);
   if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("hl"); setTimeout(() => el.classList.remove("hl"), 1500); }
 });
 
@@ -909,6 +1185,7 @@ function renderRate() {
   document.querySelectorAll("#rateScore button").forEach((b) => b.classList.toggle("on", b.dataset.v === r.score));
   document.querySelectorAll("#rateWhy button").forEach((b) => b.classList.toggle("on", (r.why || []).includes(b.textContent)));
   if (document.activeElement !== $("rateMemo")) $("rateMemo").value = r.memo || "";
+  $("rateShown").textContent = r.score ? r.score : "";
 }
 function setRate(fn) {
   const u = rateRun(); if (!u) return;
@@ -1194,7 +1471,11 @@ document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = () => copy(g
 // 「S:」の行が空かないよう、見出しのすぐ後ろに1行目を続ける(カルテに貼ったときに詰まる)
 const soapText = (get) => KEYS.map((k) => `${k}:${get(k).replace(/^\s+/, "")}`).join("\n");
 const allText = () => soapText(getPlain);
-$("copyAll").onclick = () => copy(allText(), "全部");
+$("copyAll").onclick = async () => {
+  await copy(allText(), "全部");
+  const left = checkItems.filter((l) => ckParse(l).done === undefined).length;
+  if (left) setTimeout(() => toast(`コピーしました(確認が残り${left}件あります)`), 50);
+};
 
 // ---- 歯の番号(歯式)をさわって直す(2026-11-13)。AIは使わない ----
 // さわる → 同じ番号で向きだけ違う3つ+歯式の表 → 選ぶと、まとめの中の同じ歯が全部変わる(「ここだけ」も選べる)。
@@ -1535,6 +1816,14 @@ function renderAiPick() {
   $("aiNote").textContent = AI_NOTE[m];
   $("aiLine").classList.toggle("on", eco);
   $("run").classList.toggle("eco", eco);
+  renderOptsNow();
+}
+// たたんだ「まとめの設定」の1行:今のAI・まとめ方・長さ(Sonnet・Haiku は歯の番号の注意も)
+function renderOptsNow() {
+  const el = $("optsNow"); if (!el) return;
+  let names; try { names = STYLE_NAME; } catch { return; } // 読み込みの途中(まだ STYLE_NAME がない)ときは、あとで renderStyle から呼ばれる
+  const m = settings.model || "opus", st = m === "haiku" ? "terms" : settings.style, ln = settings.length || "normal";
+  el.innerHTML = `${{ opus: "Opus", sonnet: "Sonnet", haiku: "Haiku" }[m]}・${esc(names[st] || "")}・${{ short: "短め", normal: "ふつう", long: "詳しく" }[ln]}` + (m !== "opus" ? `<em>歯の番号に注意</em>` : "");
 }
 $("aiSeg").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
@@ -1556,6 +1845,7 @@ function renderStyle() {
   const ln = settings.length || "normal";
   document.querySelectorAll("#lengthPick button").forEach((b) => b.classList.toggle("on", b.dataset.v === ln));
   $("lengthNote").textContent = LENGTH_NOTE[ln];
+  renderOptsNow();
 }
 $("lengthPick").onclick = (e) => {
   const b = e.target.closest("button"); if (!b) return;
@@ -1833,6 +2123,20 @@ if (last) {
 }
 autoClear(); // 時間がたっていたら、戻した内容を履歴に入れてから消す(同じ処理の中なので画面には出ない)
 setInterval(autoClear, 30000);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoClear(); });</script>
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoClear(); });
+// 手順の目印(① 録音 → ② まとめる → ③ 確認 → ④ コピー)を今の段階に合わせる
+function updateSteps() {
+  const sp = document.querySelectorAll("#steps span"); if (!sp.length) return;
+  let n = 0;
+  if ($("recBtn").classList.contains("on")) n = 0;
+  else if ($("result").hidden) n = input.value.trim() ? 1 : 0;
+  else n = checkItems.some((l) => ckParse(l).done === undefined) ? 2 : 3;
+  sp.forEach((e, j) => { e.className = j < n ? "done" : j === n ? "on" : ""; });
+}
+new MutationObserver(updateSteps).observe($("result"), { attributes: true, attributeFilter: ["hidden"] });
+new MutationObserver(updateSteps).observe($("recBtn"), { attributes: true, attributeFilter: ["class"] });
+new MutationObserver(updateSteps).observe($("checks"), { childList: true });
+input.addEventListener("input", updateSteps);
+updateSteps();</script>
 </body>
 </html>
