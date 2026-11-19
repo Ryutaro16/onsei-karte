@@ -43,10 +43,31 @@
   .ck .q { font-size:15px; }
   .ck .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
   .ck .acts button { min-height:34px; font-size:14px; padding:3px 10px; }
-  .ck .acts button.cand { border-color:var(--accent, #0a66c2); color:var(--accent, #0a66c2); }
+  .ck .acts button.cand { border-color:var(--acc, #0a66c2); color:var(--acc, #0a66c2); }
   .ck .acts button.main { font-weight:700; }
-  .ck .teeth { display:grid; grid-template-columns:repeat(8, 1fr); gap:3px; width:100%; }
-  .ck .teeth button { padding:3px 0; min-height:32px; font-size:13px; }
+  .ck .q { cursor:pointer; }
+  .ck.sel { background:rgba(10,102,194,.10); border-radius:8px; padding-left:6px; padding-right:6px; }
+  .ck.done .q { opacity:.55; }
+  .ck .acts button.undo { min-height:28px; font-size:13px; padding:2px 8px; }
+  .ckhead { display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; font-size:13px; margin:2px 0 4px; }
+  .ckhead .seg button { min-height:28px; font-size:12px; padding:2px 8px; }
+  .ckprev { width:100%; font-size:14px; background:var(--card); border-radius:8px; padding:6px 8px; }
+  .ckprev del { color:var(--sub); } .ckprev ins { text-decoration:none; color:var(--ok, #1f8a5b); font-weight:700; }
+  .ckhl { outline:2px solid var(--acc, #0a66c2); background:rgba(10,102,194,.14); border-radius:4px; }
+  .ckhl.flash { animation:ckFlash 1.3s ease-out; } .ckhl.only { outline:none; }
+  @keyframes ckFlash { from { background:#9ee6b5; } to { background:transparent; } }
+  .sec.ckbox .body { box-shadow:inset 0 0 0 2px var(--acc, #0a66c2); background:rgba(10,102,194,.06); }
+  /* 歯式図:上下・左右が一目で分かる形。十字の線で4つに分ける */
+  .ckchart { width:calc(100% + 16px); margin:4px -8px 0; }
+  .ckchart .lr { display:flex; justify-content:space-between; font-size:12px; color:var(--sub); padding:0 2px; }
+  .ckchart .jaw { display:grid; grid-template-columns:repeat(8, 1fr) 3px repeat(8, 1fr); gap:1px; }
+  .ckchart .jaw.up { padding-bottom:4px; border-bottom:3px solid var(--ink); }
+  .ckchart .jaw.lo { padding-top:4px; }
+  .ckchart .mid { background:var(--ink); border-radius:2px; }
+  .ckchart .jaw button { padding:0; min-width:0; min-height:46px; font-size:16px; font-weight:700; border-radius:10px 10px 6px 6px; }
+  .ckchart .jaw.lo button { border-radius:6px 6px 10px 10px; }
+  .ckchart .jaw button.on { background:var(--acc, #0a66c2); color:#fff; border-color:var(--acc, #0a66c2); }
+  .ckchart .picked { font-size:15px; margin:6px 0 2px; } .ckchart .picked b { color:var(--acc, #0a66c2); }
   .ck .lines { display:flex; flex-direction:column; gap:4px; width:100%; }
   .ck .lines button { text-align:left; }
   .ck input.fix { font-size:16px; padding:4px 6px; flex:1; min-width:8em; }
@@ -231,6 +252,8 @@
   <select id="aiModel"><option value="opus">Opus(精度重視・10分の会話 約7円)</option><option value="sonnet">Sonnet(節約・10分の会話 約3円)</option><option value="haiku">Haiku(最安・用語だけ・歯の番号は文字で)</option></select>
   <label for="aiStyle">まとめ方(患者さん向けのやさしい言い方を、どこまで歯科用語にするか)</label>
   <select id="aiStyle"><option value="plain">言い換えない(聞き間違いの直しだけ・前の方法)</option><option value="terms">用語だけ(抜髄・仮封など。病名は付けない)</option><option value="full">病名まで(根の先の膿→根尖性歯周炎 など)</option></select>
+  <label for="ckTapPick">確認欄の候補ボタンの押し方</label>
+  <select id="ckTapPick"><option value="two">2回押し(1回目で本文の前→後を見せて、2回目で決定)</option><option value="one">1回で決定(違ったら「やり直す」)</option></select>
   <label for="aiLength">まとめの長さ</label>
   <select id="aiLength"><option value="short">短め(大事な事実だけ。確認欄は5件まで)</option><option value="normal">ふつう</option><option value="long">詳しく(説明は選択肢ごと・指導は中身ごと)</option></select>
   <label for="keepDays">まとめの履歴を残す期間(共用の端末は「残さない」「その日だけ」も選べます)</label>
@@ -254,7 +277,7 @@
     <button id="exportCsv">1回ごとの記録をCSVで書き出す(Excel・Numbers用)</button>
     <p class="muted">話した内容は記録しません(字数・長さ・金額だけ)。</p>
     <p class="muted">「合計をリセット」は上の合計だけを0にします(月ごとの記録とCSVは消えません)。<button class="link" id="resetUsage">合計をリセット</button></p>
-    <p class="muted">版 11/17f(確認欄に書き足す)</p>
+    <p class="muted">版 11/19a(確認欄:押し方の切替・やり直す・本文を囲う・歯式図)</p>
   </div>
 </dialog>
 
@@ -317,10 +340,9 @@ const TOOTH_SRC = "[1-8A-E](?:[-〜~]?[1-8A-E])*[┘┐]|[└┌][1-8A-E](?:[-�
 const TOOTH_RE = new RegExp(TOOTH_SRC, "g"), TOOTH_FULL = new RegExp(`^(?:${TOOTH_SRC})$`);
 
 // 本文の受け渡しは「〘推測した言葉〙」の印つきの文字で行う。画面では黄色の印、コピーでは印を外す
-function setBox(k, marked) {
-  boxes[k].innerHTML = esc(marked).replace(/〘([^〘〙\n]*)〙/g, '<mark class="guess">$1</mark>').replace(/[〘〙]/g, "")
-    .replace(TOOTH_RE, '<span class="tooth">$&</span>'); // 歯の番号はさわって直せるように印を付ける(文字は変えない)
-}
+const boxHtml = (marked) => esc(marked).replace(/〘([^〘〙\n]*)〙/g, '<mark class="guess">$1</mark>').replace(/[〘〙]/g, "")
+  .replace(TOOTH_RE, '<span class="tooth">$&</span>'); // 歯の番号はさわって直せるように印を付ける(文字は変えない)
+function setBox(k, marked) { boxes[k].innerHTML = boxHtml(marked); }
 function getMarked(k) {
   let s = "";
   const walk = (n) => {
@@ -376,52 +398,125 @@ function parseSoap(text) {
 // 貼る前に見る点(コピーには入れない)
 // 2026-11-17 さわって直せる確認欄:AIが行の終わりに付ける印 [候補:…/…]・[対象:…] を使い、選ぶと本文の言葉が差し替わる(=全部コピーの文も変わる)。
 // AIは呼ばない(0円)。済んだ項目は行の終わりに {済:…} を付けて残す(履歴・詳しい記録にもそのまま残り、どの推測が当たり・外れたか分析できる)
-let checkItems = [], ckOpen = null; // ckOpen = { i, kind:"edit"|"tooth"|"line", tooth }
+let checkItems = [], ckOpen = null, ckSel = -1, ckFlash = null; // ckOpen = 開いている操作 / ckSel = 選んでいる項目 / ckFlash = 直したばかりの行 [k,n]
+// 確認欄の1行を読む。印:[候補:…/…] [対象:…] [書く:…](AIが付ける)・{済:…} {戻:欄|行|元の行}(アプリが付ける)
 function ckParse(line) {
   const cands = ((line.match(/\[候補[:：]([^\]]*)\]/) || [])[1] || "").split(/[\/／]/).map((x) => x.trim()).filter(Boolean);
   const target = ((line.match(/\[対象[:：]([^\]]*)\]/) || [])[1] || "").trim();
+  const write = ((line.match(/\[書く[:：]([^\]]*)\]/) || [])[1] || "").trim();
   const done = (line.match(/\{済[:：]([^}]*)\}/) || [])[1];
+  const undoM = line.match(/\{戻[:：]([SOAP])\|(\d+)\|([^}]*)\}/);
+  const undo = undoM ? { k: undoM[1], n: +undoM[2], old: undoM[3] === "-" ? null : decodeURIComponent(undoM[3]) } : null;
   const arrow = line.match(/「([^」]+)」\s*→\s*「([^」]+)」/);
-  const text = line.replace(/\s*\[(候補|対象)[:：][^\]]*\]/g, "").replace(/\s*\{済[:：][^}]*\}/g, "").trim();
+  const text = line.replace(/\s*\[(候補|対象|書く)[:：][^\]]*\]/g, "").replace(/\s*\{(済|戻)[:：][^}]*\}/g, "").trim();
   const sec = (text.match(/^([SOAP])[\s・「]/) || [])[1] || "";
-  const word = arrow ? arrow[2] : cands[0] || "";
-  const tooth = !!target || /(部位|歯の番号|歯番|どの歯)[^。]*(発言なし|不明|言われていない|ない)/.test(text);
-  return { text, cands, target, done, from: arrow ? arrow[1] : "", word, sec, tooth };
+  // 本文の黄色の言葉:候補の1つ目(=本文の〘〙と同じ決まり)を優先し、なければ「→」のあとの言葉
+  const word = cands[0] || (arrow ? arrow[2] : "");
+  const tooth = !!target || !!write || /(部位|歯の番号|歯番|どの歯)[^。]*(発言なし|不明|言われていない|ない)/.test(text);
+  // 新しい行に最初から入れる言葉:AIの[書く:]、なければ項目の文の「…」
+  const quote = (text.match(/「([^」]+)」/) || [])[1] || "";
+  return { text, cands, target, write: write || (arrow ? "" : quote), done, undo, from: arrow ? arrow[1] : "", word, sec, tooth };
 }
 const ckText = (i) => ckParse(checkItems[i]).text; // 印を外した文(表示・CSVの件数用)
 const hasMark = (w) => KEYS.some((k) => getMarked(k).includes(`〘${w}〙`));
+const ckLinesOf = (k) => getMarked(k).split("\n");
+const ckTap = () => (settings.ckTap === "one" ? "one" : "two"); // 候補ボタンの押し方:two=2回押し(前→後を見てから) / one=1回で決定
+// 確認欄をS→O→A→Pの順に(同じ欄の中はAIが書いた順)
+const CK_ORDER = { S: 0, O: 1, A: 2, P: 3 };
+function ckSort(items) { return items.map((l, j) => [l, j]).sort((a, b) => (CK_ORDER[ckParse(a[0]).sec] ?? 9) - (CK_ORDER[ckParse(b[0]).sec] ?? 9) || a[1] - b[1]).map((x) => x[0]); }
+function ckNext(from = -1) { // まだ済んでいない次の項目
+  for (let d = 1; d <= checkItems.length; d++) { const i = (from + d) % checkItems.length; if (ckParse(checkItems[i]).done === undefined) return i; }
+  return -1;
+}
+// 項目が本文のどこのことか:[欄, 行] / 行が決まらなければ [欄, -1] / 分からなければ null
+function ckWhere(c) {
+  if (c.word) { for (const k of KEYS) { const n = ckLinesOf(k).findIndex((l) => l.includes(`〘${c.word}〙`)); if (n >= 0) return [k, n]; } }
+  const t = ckTargetLine(c);
+  if (t) return t;
+  return c.sec ? [c.sec, -1] : null;
+}
+function ckTargetLine(c) {
+  if (!c.target) return null;
+  const hits = (c.sec ? [c.sec] : KEYS).flatMap((k) => ckLinesOf(k).map((t, n) => [k, n, t])).filter(([, , t]) => t.replace(/[〘〙]/g, "").includes(c.target));
+  return hits.length === 1 ? [hits[0][0], hits[0][1]] : null;
+}
+// 本文を囲う(選んでいる項目の場所=青い枠、直したばかりの行=緑に光る)
+function ckPaint() {
+  document.querySelectorAll(".sec.ckbox").forEach((e) => e.classList.remove("ckbox"));
+  for (const k of KEYS) if (boxes[k].querySelector(".ckhl")) setBox(k, getMarked(k));
+  if ($("result").hidden) return;
+  const marks = {};
+  const sel = ckSel >= 0 && checkItems[ckSel] ? ckWhere(ckParse(checkItems[ckSel])) : null;
+  if (sel && sel[1] < 0) boxes[sel[0]].closest(".sec").classList.add("ckbox");
+  else if (sel) (marks[sel[0]] = marks[sel[0]] || {})[sel[1]] = "ckhl";
+  if (ckFlash) (marks[ckFlash[0]] = marks[ckFlash[0]] || {})[ckFlash[1]] = ((marks[ckFlash[0]] || {})[ckFlash[1]] ? "ckhl " : "ckhl ") + "flash" + (sel && sel[0] === ckFlash[0] && sel[1] === ckFlash[1] ? "" : " only");
+  for (const [k, m] of Object.entries(marks)) {
+    const ls = ckLinesOf(k);
+    boxes[k].innerHTML = ls.map((l, n) => (m[n] ? `<span class="${m[n]}">${boxHtml(l)}</span>` : boxHtml(l))).join("\n");
+  }
+}
+function ckScrollToSel() { const el = document.querySelector(".ckhl:not(.only), .sec.ckbox"); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); }
 function showChecks() {
   const box = $("checks");
   box.hidden = !checkItems.length;
-  if (!checkItems.length) { box.innerHTML = ""; return; }
+  if (!checkItems.length) { box.innerHTML = ""; ckPaint(); return; }
   const left = checkItems.filter((l) => ckParse(l).done === undefined).length;
-  let html = `<b>貼る前に確認(${checkItems.length}件${left < checkItems.length ? `・残り${left}件` : ""}・コピーには入りません)</b><div class="sub" style="font-size:13px">さわって選ぶと、本文と「全部コピー」の文が直ります</div>`;
+  const two = ckTap() === "two";
+  let html = `<b>貼る前に確認(${checkItems.length}件${left < checkItems.length ? `・残り${left}件` : ""}・コピーには入りません)</b>
+    <div class="ckhead"><span class="sub">項目をさわると本文の場所を青い枠で囲います</span><span class="seg cktap"><button data-a="tap" data-v="two" class="${two ? "on" : ""}">2回押し</button><button data-a="tap" data-v="one" class="${two ? "" : "on"}">1回で決定</button></span></div>`;
   checkItems.forEach((line, i) => {
-    const c = ckParse(line);
-    if (c.done !== undefined) { html += `<div class="ck done" data-i="${i}"><div class="q">✓ ${esc(c.text)} <span class="sub">${esc(c.done)}</span></div></div>`; return; }
+    const c = ckParse(line), sel = i === ckSel;
+    if (c.done !== undefined) {
+      html += `<div class="ck done${sel ? " sel" : ""}" data-i="${i}"><div class="acts"><span class="q" data-a="see">✓ ${esc(c.text)} <span class="sub">${esc(c.done)}</span></span><button class="undo" data-a="undo">やり直す</button></div></div>`;
+      return;
+    }
+    const op = ckOpen && ckOpen.i === i ? ckOpen : null;
     let acts = "";
     const live = c.word && hasMark(c.word);
     if (live) {
-      for (const x of c.cands) if (x !== c.word) acts += `<button class="cand" data-a="cand" data-v="${esc(x)}">${esc(x)}</button>`;
+      for (const x of c.cands) if (x !== c.word) acts += `<button class="cand" data-a="cand" data-v="${esc(x)}">${op && op.kind === "pre" && op.v === x ? "決定:" : ""}${esc(x)}</button>`;
       acts += `<button class="main" data-a="ok">このままでよい</button>`;
-      if (c.from && c.from !== c.word) acts += `<button data-a="back">元に戻す「${esc(c.from)}」</button>`;
+      if (c.from && c.from !== c.word) acts += `<button data-a="back">${op && op.kind === "pre" && op.v === c.from ? "決定:" : ""}元に戻す「${esc(c.from)}」</button>`;
       acts += `<button data-a="edit">自分で直す</button>`;
-      if (ckOpen && ckOpen.i === i && ckOpen.kind === "edit") acts += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckFix" value="${esc(c.word)}"><button class="main" data-a="save">決定</button></div>`;
+      if (op && op.kind === "pre") {
+        const w = ckWhere(c);
+        if (w && w[1] >= 0) { const l = ckLinesOf(w[0])[w[1]]; acts += `<div class="ckprev">${w[0]}：<del>${esc(l.replace(/[〘〙]/g, ""))}</del><br>→ <ins>${esc(l.replace(`〘${c.word}〙`, op.v).replace(/[〘〙]/g, ""))}</ins><br><span class="sub">もう一度押すと決定</span></div>`; }
+      }
+      if (op && op.kind === "edit") acts += `<div style="display:flex;gap:6px;width:100%"><input class="fix" id="ckFix" value="${esc(c.word)}"><button class="main" data-a="save">決定</button></div>`;
     } else if (c.tooth) {
-      acts += `<button class="main" data-a="tooth">歯を選んで足す</button><button data-a="note">書き足す</button><button data-a="skip">足さない</button>`;
-      if (ckOpen && ckOpen.i === i && ckOpen.kind === "tooth") acts += `<div class="teeth">${ckTeeth()}</div>`;
-      if (ckOpen && ckOpen.i === i && ckOpen.kind === "line") acts += `<div class="sub" style="width:100%">${esc(ckOpen.tooth)} を足す行を選んでください</div><div class="lines">${ckLines(c.sec)}</div>`;
+      acts += `<button class="main" data-a="tooth">歯を選ぶ(何本でも)</button><button data-a="note">書き足す</button><button data-a="skip">足さない</button>`;
+      if (op && op.kind === "tooth") acts += ckChart(op.sel || []);
+      if (op && op.kind === "how") acts += ckHow(c, op);
+      if (op && op.kind === "line") acts += `<div class="sub" style="width:100%">${esc(op.tooth)} を頭に足す行を選んでください</div><div class="lines">${ckLines(c.sec)}</div>`;
     } else acts += `<button class="main" data-a="seen">確認した</button><button data-a="note">書き足す</button>`;
-    if (ckOpen && ckOpen.i === i && (ckOpen.kind === "note" || ckOpen.kind === "noteLine")) acts += ckNoteBox(c);
-    html += `<div class="ck" data-i="${i}"><div class="q">${esc(c.text)}</div><div class="acts">${acts}</div></div>`;
+    if (op && (op.kind === "note" || op.kind === "noteLine")) acts += ckNoteBox(c);
+    html += `<div class="ck${sel ? " sel" : ""}" data-i="${i}"><div class="q" data-a="see">${esc(c.text)}</div><div class="acts">${acts}</div></div>`;
   });
   html += `<div class="legend">本文の<mark class="guess">黄色の言葉</mark>は、AIが推測して直したところです(さわると、この欄のその項目に移ります。コピーすると色は消えます)。</div>`;
   box.innerHTML = html;
+  ckPaint();
 }
-function ckTeeth() {
-  const r = [8, 7, 6, 5, 4, 3, 2, 1], l = [1, 2, 3, 4, 5, 6, 7, 8];
-  const row = (ds, f) => ds.map((d) => { const t = f(d); return `<button data-a="t" data-v="${t}">${t}</button>`; }).join("");
-  return row(r, (d) => d + "┘") + row(l, (d) => "└" + d) + row(r, (d) => d + "┐") + row(l, (d) => "┌" + d);
+// 歯式図(右上8…1|1…8左上 / 右下8…1|1…8左下)。何本でも選べる
+const ckTName = (q, d) => (q === "UR" ? d + "┘" : q === "UL" ? "└" + d : q === "LR" ? d + "┐" : "┌" + d);
+const CK_T_ORDER = ["UR", "UL", "LR", "LL"].flatMap((q) => [1, 2, 3, 4, 5, 6, 7, 8].map((d) => ckTName(q, d)));
+function ckChart(sel) {
+  const btn = (q, d) => { const t = ckTName(q, d); return `<button class="${sel.includes(t) ? "on" : ""}" data-a="t" data-v="${t}">${d}</button>`; };
+  const row = (r, l) => [8, 7, 6, 5, 4, 3, 2, 1].map((d) => btn(r, d)).join("") + `<span class="mid"></span>` + [1, 2, 3, 4, 5, 6, 7, 8].map((d) => btn(l, d)).join("");
+  const picked = CK_T_ORDER.filter((t) => sel.includes(t));
+  return `<div class="ckchart"><div class="lr"><span>右上</span><span>左上</span></div><div class="jaw up">${row("UR", "UL")}</div><div class="jaw lo">${row("LR", "LL")}</div><div class="lr"><span>右下</span><span>左下</span></div>
+    <div class="picked">選んだ歯:<b>${picked.length ? picked.join(" ") : "まだありません"}</b></div>
+    <div class="acts"><button class="main" data-a="tOk"${picked.length ? "" : " disabled"}>決定</button><button data-a="tClear">すべて外す</button></div></div>`;
+}
+// 歯を決めたあとの足し方:AIが教えた行の頭に / ほかの行を選ぶ / 新しい行で書く(言葉は最初から入れておく)
+function ckHow(c, op) {
+  const t = ckTargetLine(c), sec = c.sec || (t && t[0]) || "O";
+  const w = op.write ?? c.write ?? "";
+  let h = "";
+  if (t) h += `<button class="main" data-a="toLine">この行の頭に足す:${esc(op.tooth)} ${esc(ckLinesOf(t[0])[t[1]].replace(/^\s*[・\-]?\s*/, "").replace(/[〘〙]/g, "").slice(0, 16))}…</button>`;
+  h += `<button data-a="pickLine">ほかの行を選ぶ</button>`;
+  h += `<div style="display:flex;gap:6px;width:100%;align-items:center"><span>${esc(op.tooth)}</span><input class="fix" id="ckNewLine" value="${esc(w)}" placeholder="新しい行で書く"></div>`;
+  h += `<button class="${t ? "" : "main"}" data-a="newLine" data-k="${sec}">${sec}に新しい行で足す:${esc(op.tooth)} ${esc(w)}</button>`;
+  return h;
 }
 // 書き足す:入れた文を、欄の最後に1行足すか、選んだ行の後ろに足す(2026-11-17 確認した以外に自由記載)
 function ckNoteBox(c) {
@@ -432,61 +527,93 @@ function ckNoteBox(c) {
   if (ckOpen && ckOpen.kind === "noteLine") h += `<div class="sub" style="width:100%">後ろに足す行を選んでください</div><div class="lines">${ckLines(c.sec, "noteTo")}</div>`;
   return h;
 }
-function ckAppendLine(k, text) {
-  const v = getMarked(k).trim();
-  setBox(k, (!v || v === "記載なし" || v === "・記載なし" ? "" : v + "\n") + "・" + text);
-}
-function ckAppendTo(k, n, text) {
-  const ls = getMarked(k).split("\n");
-  ls[n] = ls[n].replace(/\s+$/, "") + " " + text;
-  setBox(k, ls.join("\n"));
-}
 // 足す行の候補(項目の欄。欄が分からなければ全部の欄)
 function ckLines(sec, act = "line") {
-  return (sec ? [sec] : KEYS).flatMap((k) => getMarked(k).split("\n").map((t, n) => [k, n, t]).filter(([, , t]) => t.trim() && t.trim() !== "記載なし"))
+  return (sec ? [sec] : KEYS).flatMap((k) => ckLinesOf(k).map((t, n) => [k, n, t]).filter(([, , t]) => t.trim() && t.trim() !== "記載なし"))
     .map(([k, n, t]) => `<button data-a="${act}" data-k="${k}" data-n="${n}">${k} ${esc(t.replace(/[〘〙]/g, "").slice(0, 40))}</button>`).join("");
 }
+// 本文を1行だけ変える。やり直し用に {欄, 行, 元の行(null=足した行)} を返す
+function ckSetLine(k, n, text) { const ls = ckLinesOf(k), old = ls[n]; ls[n] = text; setBox(k, ls.join("\n")); return { k, n, old }; }
 function ckReplace(word, to) { // 本文の〘word〙を to に(黄色を外す)
-  for (const k of KEYS) { const v = getMarked(k); if (v.includes(`〘${word}〙`)) setBox(k, v.replace(`〘${word}〙`, to)); }
+  for (const k of KEYS) { const ls = ckLinesOf(k), n = ls.findIndex((l) => l.includes(`〘${word}〙`)); if (n >= 0) return ckSetLine(k, n, ls[n].replace(`〘${word}〙`, to)); }
+  return null;
 }
-function ckAddTooth(k, n, tooth) {
-  const ls = getMarked(k).split("\n");
-  ls[n] = ls[n].replace(/^(\s*[・\-]?\s*)/, `$1${tooth} `);
-  setBox(k, ls.join("\n"));
+const ckAddTooth = (k, n, tooth) => ckSetLine(k, n, ckLinesOf(k)[n].replace(/^(\s*[・\-]?\s*)/, `$1${tooth} `));
+const ckAppendTo = (k, n, text) => ckSetLine(k, n, ckLinesOf(k)[n].replace(/\s+$/, "") + " " + text);
+function ckAppendLine(k, text) {
+  const v = getMarked(k).trim();
+  if (!v || v === "記載なし" || v === "・記載なし") { setBox(k, "・" + text); return { k, n: 0, old: v || "記載なし" }; }
+  setBox(k, v + "\n・" + text);
+  return { k, n: v.split("\n").length, old: null };
 }
-function ckDone(i, label, log) {
-  checkItems[i] = checkItems[i].replace(/\s*\{済[:：][^}]*\}/g, "") + ` {済:${label}}`;
+function ckDone(i, label, log, undo) {
+  checkItems[i] = checkItems[i].replace(/\s*\{(済|戻)[:：][^}]*\}/g, "") + ` {済:${label}}` + (undo ? ` {戻:${undo.k}|${undo.n}|${undo.old == null ? "-" : encodeURIComponent(undo.old)}}` : "");
   if (evCase) { (evCase.checks = evCase.checks || []).push({ at: Date.now(), key: shownKey, item: ckText(i), ...log }); }
-  ckOpen = null; saveLast(); checkTeeth(); showChecks();
+  ckOpen = null; ckFlash = undo ? [undo.k, undo.old == null ? undo.n : undo.n] : null;
+  ckSel = ckNext(i);
+  saveLast(); checkTeeth(); showChecks();
+  if (ckFlash) setTimeout(() => { ckFlash = null; ckPaint(); }, 1300);
+}
+function ckUndo(i) {
+  const c = ckParse(checkItems[i]);
+  if (c.undo) {
+    const ls = ckLinesOf(c.undo.k);
+    if (c.undo.old == null) { if (c.undo.n < ls.length) ls.splice(c.undo.n, 1); }
+    else if (c.undo.n < ls.length) ls[c.undo.n] = c.undo.old;
+    setBox(c.undo.k, ls.join("\n"));
+  }
+  checkItems[i] = checkItems[i].replace(/\s*\{(済|戻)[:：][^}]*\}/g, "");
+  if (evCase) { (evCase.checks = evCase.checks || []).push({ at: Date.now(), key: shownKey, item: ckText(i), act: "undo" }); }
+  ckOpen = null; ckSel = i; ckFlash = null;
+  saveLast(); checkTeeth(); showChecks();
+}
+function ckApply(i, c, v, act) { // 推測の言葉を v に
+  const u = ckReplace(c.word, v);
+  ckDone(i, act === "back" ? `「${v}」に戻した` : act === "ok" ? "このまま" : `「${v}」を選んだ`, { act, from: c.word, to: v }, u);
 }
 $("checks").addEventListener("click", (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  const el = b.closest(".ck"), i = +el.dataset.i, c = ckParse(checkItems[i]), a = b.dataset.a;
-  if (a === "ok") { ckReplace(c.word, c.word); ckDone(i, "このまま", { act: "ok", to: c.word }); }
-  else if (a === "cand") { ckReplace(c.word, b.dataset.v); ckDone(i, `「${b.dataset.v}」を選んだ`, { act: "cand", from: c.word, to: b.dataset.v }); }
-  else if (a === "back") { ckReplace(c.word, c.from); ckDone(i, `「${c.from}」に戻した`, { act: "back", from: c.word, to: c.from }); }
+  const b = e.target.closest("button, [data-a='see']"); if (!b) return;
+  const a = b.dataset.a;
+  if (a === "tap") { settings = { ...settings, ckTap: b.dataset.v }; store.set("settings", settings); ckOpen = null; showChecks(); return; }
+  const el = b.closest(".ck"); if (!el) return;
+  const i = +el.dataset.i, c = ckParse(checkItems[i]);
+  if (a === "see") { ckSel = ckSel === i && !ckOpen ? -1 : i; if (ckOpen && ckOpen.i !== i) ckOpen = null; showChecks(); ckScrollToSel(); return; }
+  if (a !== "undo") ckSel = i;
+  if (a === "undo") ckUndo(i);
+  else if (a === "ok") ckApply(i, c, c.word, "ok");
+  else if (a === "cand" || a === "back") {
+    const v = a === "cand" ? b.dataset.v : c.from;
+    if (ckTap() === "one" || (ckOpen && ckOpen.i === i && ckOpen.kind === "pre" && ckOpen.v === v)) ckApply(i, c, v, a);
+    else { ckOpen = { i, kind: "pre", v }; showChecks(); }
+  }
   else if (a === "edit") { ckOpen = { i, kind: "edit" }; showChecks(); $("ckFix")?.focus(); }
-  else if (a === "save") { const v = ($("ckFix").value || "").trim() || c.word; ckReplace(c.word, v); ckDone(i, `「${v}」に直した`, { act: "edit", from: c.word, to: v }); }
+  else if (a === "save") { const v = ($("ckFix").value || "").trim() || c.word; const u = ckReplace(c.word, v); ckDone(i, `「${v}」に直した`, { act: "edit", from: c.word, to: v }, u); }
   else if (a === "seen") ckDone(i, "確認した", { act: "seen" });
   else if (a === "skip") ckDone(i, "足さない", { act: "skip" });
-  else if (a === "tooth") { ckOpen = ckOpen && ckOpen.i === i ? null : { i, kind: "tooth" }; showChecks(); }
-  else if (a === "t") {
-    // AIが教えた対象の言葉がある行が1つに決まれば、そこに足す。決まらなければ行を選んでもらう
-    const hits = c.target ? (c.sec ? [c.sec] : KEYS).flatMap((k) => getMarked(k).split("\n").map((t, n) => [k, n, t])).filter(([, , t]) => t.replace(/[〘〙]/g, "").includes(c.target)) : [];
-    if (hits.length === 1) { ckAddTooth(hits[0][0], hits[0][1], b.dataset.v); ckDone(i, `${b.dataset.v} を足した`, { act: "tooth", to: b.dataset.v }); }
-    else { ckOpen = { i, kind: "line", tooth: b.dataset.v }; showChecks(); }
+  else if (a === "tooth") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === "tooth" ? null : { i, kind: "tooth", sel: [] }; showChecks(); }
+  else if (a === "t") { const s = ckOpen.sel || [], t = b.dataset.v; ckOpen.sel = s.includes(t) ? s.filter((x) => x !== t) : [...s, t]; showChecks(); }
+  else if (a === "tClear") { ckOpen.sel = []; showChecks(); }
+  else if (a === "tOk") { const tooth = CK_T_ORDER.filter((t) => (ckOpen.sel || []).includes(t)).join(" "); ckOpen = { i, kind: "how", tooth }; showChecks(); }
+  else if (a === "toLine") { const t = ckTargetLine(c); const u = ckAddTooth(t[0], t[1], ckOpen.tooth); ckDone(i, `${ckOpen.tooth} を足した`, { act: "tooth", to: ckOpen.tooth }, u); }
+  else if (a === "pickLine") { ckOpen = { ...ckOpen, kind: "line" }; showChecks(); }
+  else if (a === "line") { const u = ckAddTooth(b.dataset.k, +b.dataset.n, ckOpen.tooth); ckDone(i, `${ckOpen.tooth} を足した`, { act: "tooth", to: ckOpen.tooth }, u); }
+  else if (a === "newLine") {
+    const w = (($("ckNewLine") || {}).value ?? ckOpen.write ?? c.write ?? "").trim(), line = ckOpen.tooth + (w ? " " + w : "");
+    const u = ckAppendLine(b.dataset.k, line); ckDone(i, `新しい行「${line}」`, { act: "toothLine", to: line, where: b.dataset.k }, u);
   }
-  else if (a === "line") { ckAddTooth(b.dataset.k, +b.dataset.n, ckOpen.tooth); ckDone(i, `${ckOpen.tooth} を足した`, { act: "tooth", to: ckOpen.tooth }); }
   else if (a === "note") { ckOpen = ckOpen && ckOpen.i === i && ckOpen.kind === "note" ? null : { i, kind: "note" }; showChecks(); $("ckNote")?.focus(); }
   else if (a === "noteAdd" || a === "noteLine" || a === "noteTo") {
     const text = ($("ckNote")?.value || (ckOpen && ckOpen.text) || "").trim();
     if (!text) { toast("書き足す内容を入れてください"); $("ckNote")?.focus(); return; }
     if (a === "noteLine") { ckOpen = { i, kind: "noteLine", text }; showChecks(); return; }
-    if (a === "noteAdd") ckAppendLine(b.dataset.k, text); else ckAppendTo(b.dataset.k, +b.dataset.n, text);
-    ckDone(i, `「${text}」を書き足した`, { act: "note", to: text, where: b.dataset.k });
+    const u = a === "noteAdd" ? ckAppendLine(b.dataset.k, text) : ckAppendTo(b.dataset.k, +b.dataset.n, text);
+    ckDone(i, `「${text}」を書き足した`, { act: "note", to: text, where: b.dataset.k }, u);
   }
 });
-$("checks").addEventListener("input", (e) => { if (e.target.id === "ckNote" && ckOpen) ckOpen.text = e.target.value; });
+$("checks").addEventListener("input", (e) => {
+  if (e.target.id === "ckNote" && ckOpen) ckOpen.text = e.target.value;
+  if (e.target.id === "ckNewLine" && ckOpen) { ckOpen.write = e.target.value; const b = $("checks").querySelector('[data-a="newLine"]'); if (b) b.textContent = `${b.dataset.k}に新しい行で足す:${ckOpen.tooth} ${ckOpen.write}`; }
+});
 $("checks").addEventListener("keydown", (e) => { if (e.target.id === "ckFix" && e.key === "Enter") { e.preventDefault(); e.target.closest(".ck").querySelector('[data-a="save"]').click(); } });
 // 本文の黄色の言葉をさわったら、確認欄のその項目へ(キーボードは出さない)
 $("soap").addEventListener("mousedown", (e) => { if (e.target.closest("mark.guess")) e.preventDefault(); });
@@ -494,6 +621,7 @@ $("soap").addEventListener("click", (e) => {
   const m = e.target.closest("mark.guess"); if (!m) return;
   e.preventDefault();
   const i = checkItems.findIndex((l) => { const c = ckParse(l); return c.done === undefined && c.word === m.textContent; });
+  if (i >= 0) { ckSel = i; showChecks(); }
   const el = i >= 0 && $("checks").querySelector(`.ck[data-i="${i}"]`);
   if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("hl"); setTimeout(() => el.classList.remove("hl"), 1500); }
 });
@@ -507,7 +635,9 @@ function showResult(sections, meta) {
     for (const m of v.match(/【要確認[^】]*】/g) || []) checkItems.push(`${k} ${m.replace(/^【要確認[:：]?|】$/g, "")}`);
     setBox(k, v.replace(/\s*【要確認[^】]*】/g, (m) => { const w = m.match(/「([^」]+)」/); return w ? ` 〘${w[1]}〙` : ""; }));
   }
+  checkItems = ckSort(checkItems); ckOpen = null; ckFlash = null;
   $("result").hidden = false;
+  ckSel = ckNext(-1);
   lastMeta = meta || null;
   renderMeta(lastMeta);
   showChecks();
@@ -1294,9 +1424,9 @@ for (const d of document.querySelectorAll("dialog")) {
   d.addEventListener("close", () => { d.style.transition = "none"; reset(); });
 }
 
-$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("evOn").checked = !settings.evOff; $("aiStyle").value = settings.style; $("aiLength").value = settings.length || "normal"; $("settings").showModal(); loadUsage(); evInfo(); };
+$("openSettings").onclick = () => { $("pass").value = settings.pass || ""; $("api").value = settings.api || ""; $("autoClear").value = String(settings.autoClear); $("device").value = settings.device || ""; $("keepDays").value = String(settings.keepDays); $("aiModel").value = settings.model || "opus"; $("evOn").checked = !settings.evOff; $("aiStyle").value = settings.style; $("aiLength").value = settings.length || "normal"; $("ckTapPick").value = ckTap(); $("settings").showModal(); loadUsage(); evInfo(); };
 $("closeSettings").onclick = () => $("settings").close();
-$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value, stt: "openai", evOff: !$("evOn").checked, style: $("aiStyle").value, length: $("aiLength").value };
+$("saveSettings").onclick = () => { settings = { pass: $("pass").value, api: $("api").value.trim(), autoClear: Number($("autoClear").value), device: $("device").value.trim(), acSet: 1, mSet: 1, keepDays: Number($("keepDays").value), model: $("aiModel").value, stt: "openai", evOff: !$("evOn").checked, style: $("aiStyle").value, length: $("aiLength").value, ckTap: $("ckTapPick").value };
   if (settings.evOff) evCase = null; store.set("settings", settings); renderAiPick(); renderStyle(); saveHistory(loadHistory()); $("settings").close(); toast("保存しました"); loadUsage(); };
 
 // ---- まとめのAI・文字起こしの切り替え(画面と⚙設定で同じ値。この端末に覚える。2026-11-15 節約スイッチから3つの選択に) ----
